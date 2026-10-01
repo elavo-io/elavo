@@ -1,3 +1,25 @@
+# Elavo
+
+Elavo is a desktop Linux image based on `ghcr.io/ublue-os/base-main`. Published builds are `ghcr.io/elavo-io/elavo`.
+
+Verify a published image with the public key in this repository:
+
+```bash
+cosign verify --key cosign.pub ghcr.io/elavo-io/elavo
+```
+
+## What is in this image
+
+Phase 1 boots to `greetd` and `gtkgreet`, then a labwc session. waybar is a stand-in panel (clock and workspace indicator) and is removed when the Elavo panel and dock replace it. This image does not include the Elavo dock, settings, the control center, the Applications folder, or NVIDIA drivers.
+
+The greeter runs in `cage` because the Fedora `gtkgreet` package requires cage, sway, wayfire, or river. The logged-in session is labwc, started from `/usr/share/wayland-sessions/elavo.desktop`. Fedora 44's labwc package does not ship that session file or `labwc-menu-generator`, so the image ships the session file and a root menu. The menu lists Terminal and Files, and fills the Applications submenu from desktop files when it opens. Window buttons are on the left. Super+Space opens `fuzzel`. Super+Return opens `foot`.
+
+Flathub is enabled from `/etc/flatpak/remotes.d`. Firefox (`org.mozilla.firefox`) is declared in `/usr/share/flatpak/preinstall.d`. `elavo-flatpak-preinstall.service` installs it after the network is up. A system Flatpak installed during the image build would land in `/var`, which bootc does not ship, so the browser is not on the image until that first online boot.
+
+The Plymouth theme is fetched during the image build from `elavo-visuals` commit `7e91404a9b4c84dd2c10cc6819cd6916a07a738e`, path `bootscreen/elavo/`. It is installed at `/usr/share/plymouth/themes/elavo` and set with `plymouth-set-default-theme -R`. The frames are not stored in this repository. The first boot should show that splash before the greeter.
+
+Package names were checked against Fedora 44, the release `base-main` tracks. Fedora has no `qt6-wayland` package; Qt applications get `qt6-qtwayland`. The UI font is Inter (`rsms-inter-fonts`) and the terminal font is JetBrains Mono. The cursor theme is Adwaita. There is no Elavo labwc SSD theme yet, so title bars use labwc's default artwork with Elavo's button order.
+
 # image-template
 
 This repository is meant to be a template for building your own custom [bootc](https://github.com/bootc-dev/bootc) image. This template is the recommended way to make customizations to any image published by the Universal Blue Project.

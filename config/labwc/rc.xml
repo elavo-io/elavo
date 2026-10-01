@@ -1,0 +1,67 @@
+<?xml version="1.0"?>
+<labwc_config>
+  <theme>
+    <titlebar>
+      <layout>close,iconify,max:</layout>
+    </titlebar>
+  </theme>
+
+  <desktops>
+    <popupTime>1000</popupTime>
+    <names>
+      <name>1</name>
+      <name>2</name>
+      <name>3</name>
+      <name>4</name>
+    </names>
+  </desktops>
+
+  <keyboard>
+    <default />
+    <keybind key="W-Return">
+      <action name="Execute" command="foot" />
+    </keybind>
+    <keybind key="W-Space">
+      <action name="Execute" command="fuzzel" />
+    </keybind>
+    <keybind key="W-q">
+      <action name="Close" />
+    </keybind>
+    <keybind key="W-m">
+      <action name="Iconify" />
+    </keybind>
+    <keybind key="W-Left">
+      <action name="SnapToEdge" direction="left" />
+    </keybind>
+    <keybind key="W-Right">
+      <action name="SnapToEdge" direction="right" />
+    </keybind>
+    <keybind key="W-Up">
+      <action name="Maximize" />
+    </keybind>
+    <keybind key="W-Down">
+      <action name="If">
+        <query maximized="both" />
+        <query tiled="any" />
+        <then>
+          <action name="UnSnap" />
+        </then>
+        <else>
+          <action name="Iconify" />
+        </else>
+      </action>
+    </keybind>
+    <keybind key="W-C-Left">
+      <action name="GoToDesktop" to="left" wrap="yes" />
+    </keybind>
+    <keybind key="W-C-Right">
+      <action name="GoToDesktop" to="right" wrap="yes" />
+    </keybind>
+    <keybind key="Print">
+      <action name="Execute" command="/usr/libexec/elavo-grim-region" />
+    </keybind>
+    <keybind key="W-S-s">
+      <action name="Execute" command="/usr/libexec/elavo-grim-region" />
+    </keybind>
+  </keyboard>
+</labwc_config>

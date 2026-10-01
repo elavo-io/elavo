@@ -1,0 +1,6 @@
+[Desktop Entry]
+Name=Elavo
+Comment=Elavo labwc session
+Exec=labwc
+Type=Application
+DesktopNames=elavo

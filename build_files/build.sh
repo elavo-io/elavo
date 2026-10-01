@@ -6,22 +6,77 @@ set -ouex pipefail
 cp -avf "/ctx/system_files"/. /
 
 ### Install packages
+# Names confirmed against Fedora 44, which ghcr.io/ublue-os/base-main tracks.
+# qt6-wayland is not a Fedora package; the Wayland Qt platform is qt6-qtwayland.
+# gtkgreet requires cage, sway, wayfire, or river. cage hosts the greeter only.
+# NetworkManager, PipeWire, and WirePlumber are already on base-main.
 
-# Packages can be installed from any enabled yum repo on the image.
-# RPMfusion repos are available by default in ublue main images
-# List of rpmfusion packages can be found here:
-# https://mirrors.rpmfusion.org/mirrorlist?path=free/fedora/updates/43/x86_64/repoview/index.html&protocol=https&redirect=1
+dnf5 install -y \
+    labwc \
+    greetd \
+    gtkgreet \
+    cage \
+    waybar \
+    fuzzel \
+    foot \
+    nautilus \
+    xdg-desktop-portal \
+    xdg-desktop-portal-gtk \
+    xdg-desktop-portal-wlr \
+    wl-clipboard \
+    cliphist \
+    grim \
+    slurp \
+    swaylock \
+    swayidle \
+    wlr-randr \
+    wlopm \
+    bluez \
+    brightnessctl \
+    power-profiles-daemon \
+    flatpak \
+    qt6-qtwayland \
+    plymouth \
+    plymouth-plugin-script \
+    curl \
+    rsms-inter-fonts \
+    jetbrains-mono-fonts \
+    adwaita-cursor-theme
 
-# this installs a package from fedora repos
-dnf5 install -y tmux
+install -d /etc/xdg/labwc /etc/skel/.config/labwc
+cp -a /ctx/config/labwc/. /etc/xdg/labwc/
+cp -a /ctx/config/labwc/. /etc/skel/.config/labwc/
+chmod 755 /etc/xdg/labwc/autostart /etc/skel/.config/labwc/autostart \
+    /usr/libexec/elavo-grim-region /usr/libexec/elavo-app-menu
 
-# Use a COPR Example:
-#
-# dnf5 -y copr enable ublue-os/staging
-# dnf5 -y install package
-# Disable COPRs so they don't end up enabled on the final image:
-# dnf5 -y copr disable ublue-os/staging
+/usr/libexec/gtkgreet-update-environments -w /etc/greetd/environments
 
-#### Example for enabling a System Unit File
+# Pinned splash from elavo-visuals. The frames are not stored in this repo.
+ELAVO_VISUALS_SHA=7e91404a9b4c84dd2c10cc6819cd6916a07a738e
+visuals_tmp=$(mktemp -d)
+curl -fsSL -o "${visuals_tmp}/visuals.tar.gz" \
+    "https://github.com/elavo-io/elavo-visuals/archive/${ELAVO_VISUALS_SHA}.tar.gz"
+tar -xzf "${visuals_tmp}/visuals.tar.gz" -C "${visuals_tmp}"
+install -d /usr/share/plymouth/themes/elavo
+cp -a "${visuals_tmp}/elavo-visuals-${ELAVO_VISUALS_SHA}/bootscreen/elavo/." /usr/share/plymouth/themes/elavo/
+rm -rf "${visuals_tmp}"
+test -f /usr/share/plymouth/themes/elavo/elavo.plymouth
+test -f /usr/share/plymouth/themes/elavo/elavo.script
 
-systemctl enable podman.socket
+plymouth-set-default-theme -R elavo
+
+install -d /etc/dconf/profile /etc/dconf/db/local.d
+if [[ ! -f /etc/dconf/profile/user ]]; then
+    printf '%s\n' 'user-db:user' 'system-db:local' > /etc/dconf/profile/user
+elif ! grep -q '^system-db:local$' /etc/dconf/profile/user; then
+    printf '%s\n' 'system-db:local' >> /etc/dconf/profile/user
+fi
+dconf update
+
+# Flathub is shipped in /etc/flatpak/remotes.d. Firefox is a preinstall file
+# under /usr/share/flatpak/preinstall.d. elavo-flatpak-preinstall.service
+# applies it after the network is up, because a system Flatpak install lives
+# in /var and bootc does not ship /var.
+
+systemctl enable greetd.service elavo-flatpak-preinstall.service
+systemctl set-default graphical.target

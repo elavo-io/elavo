@@ -1,0 +1,16 @@
+<?xml version="1.0"?>
+<openbox_menu>
+  <menu id="root-menu" label="Applications">
+    <item label="Terminal">
+      <action name="Execute" command="foot" />
+    </item>
+    <item label="Files">
+      <action name="Execute" command="nautilus" />
+    </item>
+    <menu id="applications" label="Applications" execute="/usr/libexec/elavo-app-menu" />
+    <separator />
+    <item label="Exit">
+      <action name="Exit" />
+    </item>
+  </menu>
+</openbox_menu>

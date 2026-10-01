@@ -1,0 +1,12 @@
+[Unit]
+Description=Install Elavo predeclared Flatpaks
+Wants=network-online.target
+After=network-online.target
+ConditionPathExistsGlob=/usr/share/flatpak/preinstall.d/*.preinstall
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/flatpak preinstall --system -y
+
+[Install]
+WantedBy=multi-user.target
