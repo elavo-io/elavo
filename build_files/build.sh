@@ -51,19 +51,32 @@ chmod 755 /etc/xdg/labwc/autostart /etc/skel/.config/labwc/autostart \
 
 /usr/libexec/gtkgreet-update-environments -w /etc/greetd/environments
 
-# Pinned splash from elavo-visuals. The frames are not stored in this repo.
-ELAVO_VISUALS_SHA=7e91404a9b4c84dd2c10cc6819cd6916a07a738e
+# Splash from elavo-visuals main. The frames are not stored in this repo.
+# The image build takes whatever main is when the build runs.
 visuals_tmp=$(mktemp -d)
 curl -fsSL -o "${visuals_tmp}/visuals.tar.gz" \
-    "https://github.com/elavo-io/elavo-visuals/archive/${ELAVO_VISUALS_SHA}.tar.gz"
+    "https://github.com/elavo-io/elavo-visuals/archive/refs/heads/main.tar.gz"
 tar -xzf "${visuals_tmp}/visuals.tar.gz" -C "${visuals_tmp}"
 install -d /usr/share/plymouth/themes/elavo
-cp -a "${visuals_tmp}/elavo-visuals-${ELAVO_VISUALS_SHA}/bootscreen/elavo/." /usr/share/plymouth/themes/elavo/
+cp -a "${visuals_tmp}/elavo-visuals-main/bootscreen/elavo/." /usr/share/plymouth/themes/elavo/
 rm -rf "${visuals_tmp}"
 test -f /usr/share/plymouth/themes/elavo/elavo.plymouth
 test -f /usr/share/plymouth/themes/elavo/elavo.script
 
-plymouth-set-default-theme -R elavo
+plymouth-set-default-theme elavo
+# -R rebuilds /boot, which a bootc image does not use. The initramfs that
+# actually boots is the one beside the kernel in this image. The base
+# image's copy still carries Fedora's bgrt theme (firmware logo, the word
+# "fedora", and a loading bar) until this rewrite.
+shopt -s nullglob
+for kdir in /usr/lib/modules/*; do
+    kver=$(basename "$kdir")
+    if [[ ! -e "${kdir}/modules.dep" ]]; then
+        continue
+    fi
+    dracut --force --no-hostonly --kver "$kver" \
+        "/usr/lib/modules/${kver}/initramfs.img"
+done
 
 install -d /etc/dconf/profile /etc/dconf/db/local.d
 if [[ ! -f /etc/dconf/profile/user ]]; then
