@@ -68,6 +68,16 @@ plymouth-set-default-theme elavo
 # actually boots is the one beside the kernel in this image. The base
 # image's copy still carries Fedora's bgrt theme (firmware logo, the word
 # "fedora", and a loading bar) until this rewrite.
+#
+# ostree and bootc are optional dracut modules: their check() returns 255,
+# so a plain rebuild omits them. The base image's initramfs was built with
+# them included. Without ostree-prepare-root, /sysroot stays the raw disk,
+# switch-root cannot find os-release, and the machine drops to emergency
+# mode after Plymouth has already started.
+install -d /usr/lib/dracut/dracut.conf.d
+cat > /usr/lib/dracut/dracut.conf.d/90-elavo.conf << 'EOF'
+add_dracutmodules+=" ostree bootc plymouth "
+EOF
 shopt -s nullglob
 for kdir in /usr/lib/modules/*; do
     kver=$(basename "$kdir")
@@ -76,6 +86,7 @@ for kdir in /usr/lib/modules/*; do
     fi
     dracut --force --no-hostonly --kver "$kver" \
         "/usr/lib/modules/${kver}/initramfs.img"
+    lsinitrd "/usr/lib/modules/${kver}/initramfs.img" | grep -q 'ostree-prepare-root'
 done
 
 install -d /etc/dconf/profile /etc/dconf/db/local.d
