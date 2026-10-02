@@ -64,30 +64,19 @@ test -f /usr/share/plymouth/themes/elavo/elavo.plymouth
 test -f /usr/share/plymouth/themes/elavo/elavo.script
 
 plymouth-set-default-theme elavo
-# -R rebuilds /boot, which a bootc image does not use. The initramfs that
-# actually boots is the one beside the kernel in this image. The base
-# image's copy still carries Fedora's bgrt theme (firmware logo, the word
-# "fedora", and a loading bar) until this rewrite.
-#
-# ostree and bootc are optional dracut modules: their check() returns 255,
-# so a plain rebuild omits them. The base image's initramfs was built with
-# them included. Without ostree-prepare-root, /sysroot stays the raw disk,
-# switch-root cannot find os-release, and the machine drops to emergency
-# mode after Plymouth has already started.
-install -d /usr/lib/dracut/dracut.conf.d
-cat > /usr/lib/dracut/dracut.conf.d/90-elavo.conf << 'EOF'
-add_dracutmodules+=" ostree bootc plymouth "
-EOF
-shopt -s nullglob
-for kdir in /usr/lib/modules/*; do
-    kver=$(basename "$kdir")
-    if [[ ! -e "${kdir}/modules.dep" ]]; then
-        continue
-    fi
-    dracut --force --no-hostonly --kver "$kver" \
-        "/usr/lib/modules/${kver}/initramfs.img"
-    lsinitrd "/usr/lib/modules/${kver}/initramfs.img" | grep -q 'ostree-prepare-root'
-done
+# Same rebuild Universal Blue uses in ublue-os/main build_files/initramfs.sh.
+# --add ostree is required. Without it the theme is in the initramfs and
+# ostree-prepare-root is not, so boot reaches the splash and then emergency
+# mode. -R is not used: it writes /boot, which this image does not boot from.
+# DRACUT_NO_XATTR avoids cp failing on security.selinux inside the container.
+# dracut still prints errors about /dev/log and /root here. /root is a symlink
+# to /var/roothome, which does not exist during the image build. Those lines
+# do not fail this command.
+export DRACUT_NO_XATTR=1
+kernel_version="$(rpm -q --queryformat='%{evr}.%{arch}' kernel-core)"
+/usr/bin/dracut --no-hostonly --kver "${kernel_version}" --reproducible --add ostree -f \
+    "/lib/modules/${kernel_version}/initramfs.img"
+chmod 0600 "/lib/modules/${kernel_version}/initramfs.img"
 
 install -d /etc/dconf/profile /etc/dconf/db/local.d
 if [[ ! -f /etc/dconf/profile/user ]]; then
