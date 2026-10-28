@@ -95,14 +95,17 @@ command -v python3 >/dev/null 2>&1 && python3 - "${HOME}" "${config}" <<'EOF' ||
 import glob, json, os, sys
 
 home, config = sys.argv[1], sys.argv[2]
-roots = [
+# Brave's channels (Browser, Beta, Nightly, Origin) each have their own
+# folder under BraveSoftware, in a package, an AppImage, or a Flatpak.
+patterns = [
     f"{config}/google-chrome",
-    f"{config}/BraveSoftware/Brave-Browser",
+    f"{config}/BraveSoftware/*",
     f"{config}/chromium",
     f"{home}/.var/app/com.google.Chrome/config/google-chrome",
-    f"{home}/.var/app/com.brave.Browser/config/BraveSoftware/Brave-Browser",
+    f"{home}/.var/app/com.brave.*/config/BraveSoftware/*",
     f"{home}/.var/app/org.chromium.Chromium/config/chromium",
 ]
+roots = [root for pattern in patterns for root in glob.glob(pattern)]
 for root in roots:
     if os.path.lexists(f"{root}/SingletonLock"):
         continue
