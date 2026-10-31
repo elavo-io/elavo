@@ -65,7 +65,8 @@ dnf5 install -y \
     polkit \
     pciutils \
     ImageMagick \
-    ffmpeg
+    ffmpeg \
+    libsoup3
 
 # base-main ships Firefox as an RPM. Elavo's Firefox is the Flathub Flatpak
 # (preinstalled below), which updates on its own; with both, the launcher and
@@ -178,6 +179,13 @@ install -m 755 \
     /usr/bin/dwarfsextract
 rm -rf "${dwarfs_tmp}"
 test -x /usr/bin/dwarfsextract
+# App Bay, the catalog window (the app-bay stage). libsoup3 above is the
+# library it links. The Applications allowlist locks an entry from this
+# desktop file.
+cp -a /ctx/app_bay_files/. /
+test -x /usr/bin/elavo-app-bay
+test -f /usr/share/applications/io.elavo.AppBay.desktop
+test -f /usr/share/metainfo/io.elavo.AppBay.metainfo.xml
 # Opening a downloaded AppImage, .flatpakref, or .flatpak bundle goes to
 # the Applications service. GIO reads the MIME cache, not the desktop
 # files, so rebuild it.
@@ -193,7 +201,7 @@ systemctl enable elavo-applications-system.service elavo-applications-system.pat
 # bars, and Firefox's window buttons. The icon theme carries the panel's sun
 # and Elavo's app icons, and inherits Adwaita for everything else. The stamp
 # tells elavo-user-theme which build each account's copy came from.
-visuals_theme_rev=36fcef645b966acb93e37c277780805414a51fd9
+visuals_theme_rev=fd146940358183e0ef166bb62bfeebcfe704191b
 theme_tmp=$(mktemp -d)
 curl -fsSL -o "${theme_tmp}/visuals.tar.gz" \
     "https://github.com/elavo-io/elavo-visuals/archive/${visuals_theme_rev}.tar.gz"
@@ -373,7 +381,7 @@ test ! -e /etc/systemd/system/timers.target.wants/rpm-ostreed-automatic.timer
 osrel=/usr/lib/os-release
 test -f "${osrel}"
 test -L /etc/os-release
-elavo_version=0.3.1.7
+elavo_version=0.3.2.0
 version_id=$(sed -n 's/^VERSION_ID=//p' "${osrel}" | tr -d "\"'")
 [[ "${version_id}" =~ ^[0-9]+$ ]]
 kept_version_id=$(sed -n 's/^VERSION_ID=//p' "${osrel}")

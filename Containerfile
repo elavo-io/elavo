@@ -2,7 +2,7 @@
 # tag. Same Fedora release as base-main, so the binaries link against the GTK
 # the image ships.
 FROM registry.fedoraproject.org/fedora:44 AS folio
-ARG ELAVO_FOLIO_REF=v0.3.3.9
+ARG ELAVO_FOLIO_REF=v0.3.4.0
 RUN dnf5 install -y git gcc pkgconf-pkg-config rust cargo \
         gtk4-devel gtk4-layer-shell-devel wayland-devel && \
     dnf5 clean all
@@ -21,6 +21,18 @@ RUN dnf5 install -y git gcc pkgconf-pkg-config rust cargo \
     dnf5 clean all
 RUN git clone --depth 1 --branch "${ELAVO_SYSTEM_SETTINGS_REF}" \
         https://github.com/elavo-io/elavo-system-settings.git /src
+WORKDIR /src
+RUN cargo build --release --locked && DESTDIR=/out scripts/install
+
+# App Bay, the catalog window. main until the first tag; pin it like Folio
+# after that. The feed editor in editor/ is for maintainers and is not built.
+FROM registry.fedoraproject.org/fedora:44 AS app-bay
+ARG ELAVO_APP_BAY_REF=main
+RUN dnf5 install -y git gcc pkgconf-pkg-config rust cargo gtk4-devel \
+        libsoup3-devel && \
+    dnf5 clean all
+RUN git clone --depth 1 --branch "${ELAVO_APP_BAY_REF}" \
+        https://github.com/elavo-io/elavo-app-bay.git /src
 WORKDIR /src
 RUN cargo build --release --locked && DESTDIR=/out scripts/install
 
@@ -64,6 +76,7 @@ COPY system_files /system_files
 COPY config /config
 COPY --from=folio /out /folio_files
 COPY --from=system-settings /out /system_settings_files
+COPY --from=app-bay /out /app_bay_files
 COPY --from=applications /out /applications_files
 COPY --from=labwc /out /labwc_files
 

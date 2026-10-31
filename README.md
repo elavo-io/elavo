@@ -10,7 +10,7 @@ cosign verify --key cosign.pub ghcr.io/elavo-io/elavo
 
 ## What is in this image
 
-The system name is Elavo. `build.sh` rewrites `/usr/lib/os-release` so `NAME` is Elavo and `VERSION` and `PRETTY_NAME` are Elavo `0.3.1.7`. GRUB's menu title is `PRETTY_NAME`, so a new deployment is `Elavo 0.3.1.7 (ostree:N)`. About reads `VERSION` for the line under the title, and shows `VERSION_ID` as Fedora Version. `VERSION_ID`, `CPE_NAME`, and `OSTREE_VERSION` stay as the base image shipped them. `ID` stays `fedora` so the ISO build and the signed `EFI/fedora` bootloader keep working. Which build is installed is `bootc status`.
+The system name is Elavo. `build.sh` rewrites `/usr/lib/os-release` so `NAME` is Elavo and `VERSION` and `PRETTY_NAME` are Elavo `0.3.2.0`. GRUB's menu title is `PRETTY_NAME`, so a new deployment is `Elavo 0.3.2.0 (ostree:N)`. About reads `VERSION` for the line under the title, and shows `VERSION_ID` as Fedora Version. `VERSION_ID`, `CPE_NAME`, and `OSTREE_VERSION` stay as the base image shipped them. `ID` stays `fedora` so the ISO build and the signed `EFI/fedora` bootloader keep working. Which build is installed is `bootc status`.
 
 The image boots to `greetd` and Folio's login screen, `elavo-greeter`, then a labwc session with Folio, the Elavo desktop: the top panel, the dock, desktop icons, Lens, and the app switcher, from [elavo-folio](https://github.com/elavo-io/elavo-folio). The Containerfile's `folio` stage builds `elavo-folio` at the tag in `ELAVO_FOLIO_REF` and installs the binaries and their systemd user units. The units are enabled globally and are wanted by `graphical-session.target`. This image does not include the control center, the Applications folder, or NVIDIA drivers.
 
@@ -20,6 +20,8 @@ System Settings comes from [elavo-system-settings](https://github.com/elavo-io/e
 - `elavo-polkit-agent.service` is the administrator password prompt (`mate-polkit`) for software updates, users, the date and time, and the computer's name.
 - `kanshi.service` reapplies the display arrangement the Displays pane saves. A drop-in keeps it stopped until the first one is saved.
 - `elavo-power-button.service` reads the laptop power button. A press while the screen is on and the session is unlocked runs the panel's Shut Down action. A press while the screen is off, the session is locked, or the machine has just woken turns the screen on. Holding the button for several seconds is the laptop's own power-off.
+
+App Bay comes from [elavo-app-bay](https://github.com/elavo-io/elavo-app-bay), built in the Containerfile's `app-bay` stage at `ELAVO_APP_BAY_REF` (`main` until the first tag). It is the catalog window. The Applications allowlist locks an entry from `io.elavo.AppBay.desktop`. The feed editor in that repository is not installed.
 
 Software updates and the lid setting run as root through `/usr/libexec/elavo-system-settings-helper` and `pkexec`. `rc.xml` sets natural scrolling, tap to click, and ignoring the trackpad while typing for every pointer; the Mouse and Trackpad panes override them per kind of device in `~/.config/labwc/rc.xml`.
 

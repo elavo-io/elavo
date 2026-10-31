@@ -2,6 +2,7 @@
 # /Applications, made from /usr/share/applications/<id>.desktop when that
 # file exists. One desktop id per line, without .desktop.
 io.elavo.SystemSettings
+io.elavo.AppBay
 org.gnome.Nautilus
 io.elavo.AppLauncher
 foot
