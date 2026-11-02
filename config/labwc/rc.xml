@@ -122,6 +122,7 @@
   <libinput>
     <device category="default">
       <naturalScroll>yes</naturalScroll>
+      <accelProfile>adaptive</accelProfile>
       <tap>yes</tap>
       <disableWhileTyping>yes</disableWhileTyping>
       <clickMethod>clickfinger</clickMethod>
