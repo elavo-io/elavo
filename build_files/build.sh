@@ -179,6 +179,19 @@ install -m 755 \
     /usr/bin/dwarfsextract
 rm -rf "${dwarfs_tmp}"
 test -x /usr/bin/dwarfsextract
+# Google Sans Flex, for the lock screen's clock only. Fedora does not package
+# it. The UI font stays Roboto. Source: google/fonts, ofl/googlesansflex.
+google_fonts_rev=6c1dbe27dcf7d817d4b62cec033ba77fa8e2a5ec
+sans_flex_sha256=a9ac770798857d5e8ac593ced42b22e40a7c08cec98319f92b0eccc2783a77ba
+sans_flex_dir=/usr/share/fonts/google-sans-flex
+mkdir -p "${sans_flex_dir}"
+curl -fsSL -o "${sans_flex_dir}/GoogleSansFlex.ttf" \
+    "https://raw.githubusercontent.com/google/fonts/${google_fonts_rev}/ofl/googlesansflex/GoogleSansFlex%5BROND%2Copsz%2Cslnt%2Cwdth%2Cwght%5D.ttf"
+echo "${sans_flex_sha256}  ${sans_flex_dir}/GoogleSansFlex.ttf" | sha256sum -c -
+curl -fsSL -o "${sans_flex_dir}/OFL.txt" \
+    "https://raw.githubusercontent.com/google/fonts/${google_fonts_rev}/ofl/googlesansflex/OFL.txt"
+fc-cache -f "${sans_flex_dir}"
+fc-list | grep -q 'Google Sans Flex'
 # App Bay, the catalog window (the app-bay stage). libsoup3 above is the
 # library it links. The Applications allowlist locks an entry from this
 # desktop file.
@@ -195,6 +208,14 @@ grep -q '^application/vnd.flatpak=.*io.elavo.Applications.desktop' /usr/share/ap
 grep -q '^application/vnd.appimage=.*io.elavo.Applications.desktop' /usr/share/applications/mimeinfo.cache
 systemctl --global enable elavo-applications.service
 systemctl enable elavo-applications-system.service elavo-applications-system.path
+
+# The firewall as Fedora Workstation sets it: the FedoraWorkstation zone
+# accepts inbound ports 1025-65535 and rejects the rest. AirPlay receivers
+# send timing and control packets back on ports PipeWire picks at random,
+# which the stricter public zone drops.
+ln -sf firewalld-workstation.conf /etc/firewalld/firewalld.conf
+grep -qx 'DefaultZone=FedoraWorkstation' /etc/firewalld/firewalld.conf
+test -f /usr/lib/firewalld/zones/FedoraWorkstation.xml
 
 # The Elavo themes from elavo-visuals, pinned. Only the splash follows main.
 # The GTK theme covers GTK4, libadwaita, the GTK3 stopgap, labwc's title
