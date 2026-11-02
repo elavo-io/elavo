@@ -191,7 +191,9 @@ echo "${sans_flex_sha256}  ${sans_flex_dir}/GoogleSansFlex.ttf" | sha256sum -c -
 curl -fsSL -o "${sans_flex_dir}/OFL.txt" \
     "https://raw.githubusercontent.com/google/fonts/${google_fonts_rev}/ofl/googlesansflex/OFL.txt"
 fc-cache -f "${sans_flex_dir}"
-fc-list | grep -q 'Google Sans Flex'
+# Do not pipe this into grep -q. pipefail is on, grep -q closes at the
+# first hit, and fc-list then dies with SIGPIPE (exit 141).
+test -n "$(fc-list "Google Sans Flex" file)"
 # App Bay, the catalog window (the app-bay stage). libsoup3 above is the
 # library it links. The Applications allowlist locks an entry from this
 # desktop file.
