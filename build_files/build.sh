@@ -81,10 +81,15 @@ test ! -e /usr/bin/firefox
 # not run (the 2013 MacBook Air's BCM4360 and the older ids the Drivers wizard
 # lists). RPM Fusion redistributes the binary under Broadcom's license. It is
 # built for this image's kernel and not loaded. System Settings writes the
-# modprobe files when the person turns it on. The package's own blacklist
-# would take the card from the built-in driver on every computer, so those
-# files are removed. NVIDIA modules are not installed; they belong to the
-# separate elavo-nvidia image.
+# modprobe files when the person turns it on.
+#
+# akmod-wl's install script compiles the driver as root whenever os-release
+# contains OSTREE_VERSION. Fedora 44's akmodsbuild refuses that, and dnf5
+# fails the whole transaction. Skip the package scriptlets and build here,
+# as the akmods user. The compiler and akmods are removed once wl.ko is
+# installed. broadcom-wl still ships a blacklist of the built-in driver;
+# those files are removed below. NVIDIA modules are not installed; they
+# belong to the separate elavo-nvidia image.
 fedora="$(rpm -E %fedora)"
 dnf5 install -y \
     "https://download1.rpmfusion.org/free/fedora/rpmfusion-free-release-${fedora}.noarch.rpm" \
@@ -92,8 +97,11 @@ dnf5 install -y \
 mapfile -t kvers < <(rpm -q kernel-core --queryformat '%{VERSION}-%{RELEASE}.%{ARCH}\n')
 test "${#kvers[@]}" -eq 1
 kver="${kvers[0]}"
-dnf5 install -y akmod-wl "kernel-devel-${kver}"
+dnf5 install -y akmods "kernel-devel-${kver}"
+getent passwd akmods >/dev/null
+dnf5 install -y --setopt=tsflags=noscripts akmod-wl
 akmods --force --kernels "${kver}"
+rm -f /etc/systemd/system/multi-user.target.wants/akmods.service
 test -n "$(find "/usr/lib/modules/${kver}" -name 'wl.ko*' -print -quit)"
 for dir in /usr/lib/modprobe.d /etc/modprobe.d /usr/lib/modules-load.d /etc/modules-load.d; do
     test -d "${dir}" || continue
@@ -104,12 +112,15 @@ for dir in /usr/lib/modprobe.d /etc/modprobe.d /usr/lib/modules-load.d /etc/modu
     fi
 done
 depmod -a "${kver}"
+dnf5 remove -y akmod-wl akmods "kernel-devel-${kver}"
 sed -i 's/^enabled=1/enabled=0/' /etc/yum.repos.d/rpmfusion*.repo
 if grep -q '^enabled=1' /etc/yum.repos.d/rpmfusion*.repo; then
     echo "RPM Fusion stayed enabled" >&2
     exit 1
 fi
 test -n "$(find "/usr/lib/modules/${kver}" -name 'wl.ko*' -print -quit)"
+test -f /usr/share/licenses/broadcom-wl/LICENSE.txt
+test ! -e /etc/systemd/system/multi-user.target.wants/akmods.service
 rpm -q brcmfmac-firmware >/dev/null
 
 # No copy in /etc/skel: elavo-session runs labwc --merge-config, so these
