@@ -20,7 +20,9 @@ cp -avf "/ctx/system_files"/. /
 # mount themselves; newer ones carry their own. squashfs-tools' unsquashfs
 # reads a squashfs AppImage's name and icon for the Applications folder
 # without running it. A DwarFS AppImage needs dwarfsextract, installed below;
-# Fedora 44 does not package it.
+# Fedora 44 does not package it. brcmfmac-firmware is the built-in Broadcom
+# Wi-Fi firmware (2015–2017 Intel Macs). The proprietary wl module is
+# installed further down and is not loaded.
 
 dnf5 install -y \
     wlroots \
@@ -66,13 +68,49 @@ dnf5 install -y \
     pciutils \
     ImageMagick \
     ffmpeg \
-    libsoup3
+    libsoup3 \
+    brcmfmac-firmware
 
 # base-main ships Firefox as an RPM. Elavo's Firefox is the Flathub Flatpak
 # (preinstalled below), which updates on its own; with both, the launcher and
 # the dock would show two Firefoxes, with separate profiles.
 dnf5 remove -y firefox firefox-langpacks
 test ! -e /usr/bin/firefox
+
+# Broadcom's proprietary wl driver, for Intel Mac Wi-Fi chips the kernel does
+# not run (the 2013 MacBook Air's BCM4360 and the older ids the Drivers wizard
+# lists). RPM Fusion redistributes the binary under Broadcom's license. It is
+# built for this image's kernel and not loaded. System Settings writes the
+# modprobe files when the person turns it on. The package's own blacklist
+# would take the card from the built-in driver on every computer, so those
+# files are removed. NVIDIA modules are not installed; they belong to the
+# separate elavo-nvidia image.
+fedora="$(rpm -E %fedora)"
+dnf5 install -y \
+    "https://download1.rpmfusion.org/free/fedora/rpmfusion-free-release-${fedora}.noarch.rpm" \
+    "https://download1.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-${fedora}.noarch.rpm"
+mapfile -t kvers < <(rpm -q kernel-core --queryformat '%{VERSION}-%{RELEASE}.%{ARCH}\n')
+test "${#kvers[@]}" -eq 1
+kver="${kvers[0]}"
+dnf5 install -y akmod-wl "kernel-devel-${kver}"
+akmods --force --kernels "${kver}"
+test -n "$(find "/usr/lib/modules/${kver}" -name 'wl.ko*' -print -quit)"
+for dir in /usr/lib/modprobe.d /etc/modprobe.d /usr/lib/modules-load.d /etc/modules-load.d; do
+    test -d "${dir}" || continue
+    find "${dir}" -type f \( -name '*wl*' -o -name '*broadcom*' \) -print -delete
+    if grep -Rqs -E 'blacklist brcmfmac|^wl$' "${dir}"; then
+        echo "wl would load, or brcmfmac would be blacklisted, on every boot" >&2
+        exit 1
+    fi
+done
+depmod -a "${kver}"
+sed -i 's/^enabled=1/enabled=0/' /etc/yum.repos.d/rpmfusion*.repo
+if grep -q '^enabled=1' /etc/yum.repos.d/rpmfusion*.repo; then
+    echo "RPM Fusion stayed enabled" >&2
+    exit 1
+fi
+test -n "$(find "/usr/lib/modules/${kver}" -name 'wl.ko*' -print -quit)"
+rpm -q brcmfmac-firmware >/dev/null
 
 # No copy in /etc/skel: elavo-session runs labwc --merge-config, so these
 # system files stay in effect and ~/.config/labwc holds only user changes.
