@@ -6,7 +6,7 @@ set -ouex pipefail
 cp -avf "/ctx/system_files"/. /
 
 ### Install packages
-# Names confirmed against Fedora 44, which ghcr.io/ublue-os/base-main tracks.
+# Names confirmed against Fedora 44, the release FEDORA_VERSION pins in the Containerfile.
 # qt6-wayland is not a Fedora package; the Wayland Qt platform is qt6-qtwayland.
 # cage hosts Folio's elavo-greeter at login, and nothing else.
 # NetworkManager, PipeWire, and WirePlumber are already on base-main.

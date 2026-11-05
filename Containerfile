@@ -1,7 +1,11 @@
+# The Fedora release for the whole image. The base image and every build
+# stage below use it, so the apps link against the same GTK and libraries
+# the image ships. Change it here, and only here, to move to a new release.
+ARG FEDORA_VERSION=44
+
 # Folio (the panel, the dock, Lens, and the app switcher), built at a pinned
-# tag. Same Fedora release as base-main, so the binaries link against the GTK
-# the image ships.
-FROM registry.fedoraproject.org/fedora:44 AS folio
+# tag, on the same Fedora release as the base image.
+FROM registry.fedoraproject.org/fedora:${FEDORA_VERSION} AS folio
 ARG ELAVO_FOLIO_REF=v0.3.5.0
 RUN dnf5 install -y git gcc pkgconf-pkg-config rust cargo \
         gtk4-devel gtk4-layer-shell-devel wayland-devel && \
@@ -14,7 +18,7 @@ RUN cargo build --release --locked && DESTDIR=/out scripts/install
 # System Settings, built the same way. Its Desktop & Dock pane embeds Folio's
 # dock settings page, which Cargo fetches at the tag in its Cargo.toml.
 # main until the first tag; pin it like Folio after that.
-FROM registry.fedoraproject.org/fedora:44 AS system-settings
+FROM registry.fedoraproject.org/fedora:${FEDORA_VERSION} AS system-settings
 ARG ELAVO_SYSTEM_SETTINGS_REF=main
 RUN dnf5 install -y git gcc pkgconf-pkg-config rust cargo \
         gtk4-devel gtk4-layer-shell-devel wayland-devel pulseaudio-libs-devel && \
@@ -26,7 +30,7 @@ RUN cargo build --release --locked && DESTDIR=/out scripts/install
 
 # App Bay, the catalog window. main until the first tag; pin it like Folio
 # after that. The feed editor in editor/ is for maintainers and is not built.
-FROM registry.fedoraproject.org/fedora:44 AS app-bay
+FROM registry.fedoraproject.org/fedora:${FEDORA_VERSION} AS app-bay
 ARG ELAVO_APP_BAY_REF=main
 RUN dnf5 install -y git gcc pkgconf-pkg-config rust cargo gtk4-devel \
         libsoup3-devel && \
@@ -38,7 +42,7 @@ RUN cargo build --release --locked && DESTDIR=/out scripts/install
 
 # The Applications folder: its services, its ctl and pkexec helper, and the
 # Files module. main until the first tag; pin it like Folio after that.
-FROM registry.fedoraproject.org/fedora:44 AS applications
+FROM registry.fedoraproject.org/fedora:${FEDORA_VERSION} AS applications
 ARG ELAVO_APPLICATIONS_REF=main
 RUN dnf5 install -y git gcc make pkgconf-pkg-config rust cargo gtk4-devel && \
     dnf5 clean all
@@ -50,7 +54,7 @@ RUN cargo build --release --locked && make -C nautilus && DESTDIR=/out scripts/i
 # labwc with the mods layer, built at a pinned revision of elavo-labwc-mods.
 # main until the first tag; pin a tag the way Folio is pinned after that.
 # The stage clones elavo-labwc at the commit in that repo's LABWC_REF.
-FROM registry.fedoraproject.org/fedora:44 AS labwc
+FROM registry.fedoraproject.org/fedora:${FEDORA_VERSION} AS labwc
 ARG ELAVO_LABWC_MODS_REF=main
 RUN dnf5 install -y git gcc meson ninja-build pkgconf-pkg-config \
         wlroots-devel wayland-devel wayland-protocols-devel \
@@ -81,7 +85,7 @@ COPY --from=applications /out /applications_files
 COPY --from=labwc /out /labwc_files
 
 # Base Image
-FROM ghcr.io/ublue-os/base-main:latest
+FROM ghcr.io/ublue-os/base-main:${FEDORA_VERSION}
 ## Other possible base images include:
 # FROM ghcr.io/ublue-os/bazzite:testing
 # FROM ghcr.io/ublue-os/aurora:stable
