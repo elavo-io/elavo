@@ -1,14 +1,16 @@
 #!/usr/bin/env python3
 """Power button.
 
-A press while the screen is on and the session is unlocked asks the panel
-to show its Shut Down question, the same one as the sun menu. A press while
-the screen is off, the session is locked, or the machine has just woken
-turns the screen on.
+A short press while the display is on and the session is unlocked asks the
+panel to lock the screen, the same Lock Screen action as the sun menu and
+Super+Ctrl+Q. On the lock screen, with the display on, it asks the panel
+to sleep, the same Sleep action as the sun menu. When the display is off,
+or the machine has just woken, it turns the display on and leaves the
+session locked or unlocked as it was.
 
-Super+Ctrl+Q and Super+Shift+Q are labwc keybinds that call the panel too,
-through elavo-panel-action. Holding the button for several seconds is the
-firmware's power-off and cannot be changed here.
+Super+Shift+Q asks whether to log out through elavo-panel-action as well.
+Holding the button for several seconds is the firmware's power-off and
+cannot be changed here.
 """
 
 import glob
@@ -24,15 +26,17 @@ RESUME_GRACE_S = 2.0
 KEY_POWER = 116
 EV_KEY = 0x01
 EVENT = struct.Struct("llHHi")
-PANEL_ACTION = "/usr/libexec/elavo-panel-action"
+PANEL_ACTION = os.environ.get("ELAVO_PANEL_ACTION", "/usr/libexec/elavo-panel-action")
 POWER_BUTTON_NAME = "Power Button"
 
 
 def decide(screen_on, locked, resume_grace):
-    """What a press does. State is at key down."""
-    if resume_grace or locked or not screen_on:
+    """What a short press does. State is at key down."""
+    if resume_grace or not screen_on:
         return "wake"
-    return "shutdown"
+    if locked:
+        return "sleep"
+    return "lock"
 
 
 def parse_sleep(line):
@@ -60,10 +64,52 @@ def key_downs(blob):
 
 
 def self_test():
-    assert decide(True, False, False) == "shutdown"
+    assert decide(True, False, False) == "lock"
+    assert decide(True, True, False) == "sleep"
     assert decide(False, False, False) == "wake"
-    assert decide(True, True, False) == "wake"
+    assert decide(False, True, False) == "wake"
     assert decide(True, False, True) == "wake"
+    assert decide(True, True, True) == "wake"
+    assert decide(False, True, True) == "wake"
+    def values(code):
+        found = []
+        stack = list(code.co_consts)
+        while stack:
+            item = stack.pop()
+            if isinstance(item, tuple):
+                stack.extend(item)
+            else:
+                found.append(item)
+        return found
+
+    wake = values(wake_screen.__code__)
+    asleep = values(suspend.__code__)
+    lock = values(lock_screen.__code__)
+    assert "--on" in wake and "--off" not in wake
+    assert "PANEL_ACTION" not in wake_screen.__code__.co_names
+    assert "sleep" in asleep and "--off" not in asleep and "--on" not in asleep
+    assert "shut-down" not in asleep
+    assert "PANEL_ACTION" in suspend.__code__.co_names
+    assert "lock" in lock and "shut-down" not in lock
+    assert "--on" not in lock and "--off" not in lock
+    assert "PANEL_ACTION" in lock_screen.__code__.co_names
+    for name in ("wake_screen", "lock_screen", "suspend"):
+        assert name in run.__code__.co_names
+    assert "display_off" not in run.__code__.co_names
+    # swayidle's argv names the lock command it has not run. That line is
+    # not the lock screen; matching it blanks an unlocked desktop.
+    idle = (
+        '2585 swayidle -w lock elavo-greeter --lock before-sleep '
+        'elavo-greeter --lock timeout 600 wlopm --off "*" resume wlopm --on "*"'
+    )
+    assert pgrep_lock_screen(idle) is False
+    assert pgrep_lock_screen("3001 elavo-greeter --lock") is True
+    assert pgrep_lock_screen("3001 /usr/bin/elavo-greeter --lock") is True
+    assert pgrep_lock_screen("3001 elavo-greeter") is False
+    assert pgrep_lock_screen("") is False
+    detected = values(session_locked.__code__)
+    assert "-x" in detected and "elavo-greeter" in detected
+    assert "-f" not in detected
     assert parse_sleep("PrepareForSleep (true)") is True
     assert parse_sleep("PrepareForSleep (false)") is False
     assert parse_sleep("Monitoring signals") is None
@@ -97,6 +143,22 @@ def screen_on():
     return any(len(parts) >= 2 and parts[-1] == "on" for parts in lines)
 
 
+def pgrep_lock_screen(text):
+    """True when pgrep -a output is the lock-screen process.
+
+    The idle daemon's command line contains `elavo-greeter --lock` as the
+    command it will run later. That is not a running lock screen.
+    """
+    for line in text.splitlines():
+        parts = line.split()
+        if len(parts) < 2 or not parts[0].isdigit():
+            continue
+        program = parts[1].rsplit("/", 1)[-1]
+        if program == "elavo-greeter" and "--lock" in parts[2:]:
+            return True
+    return False
+
+
 def session_locked():
     sid = session_id()
     if sid:
@@ -107,26 +169,48 @@ def session_locked():
         )
         if result.stdout.strip() == "yes":
             return True
-    # The lock screen sets the hint once it holds the lock. Its process is the
-    # fallback for the moment before that, or when logind refused the call.
-    lock = ["pgrep", "-u", str(os.getuid()), "-f", "elavo-greeter --lock"]
-    return subprocess.run(lock, capture_output=True).returncode == 0
+    # The lock screen sets the hint once it holds the lock. Match its
+    # process name, not every command line that mentions the greeter.
+    result = subprocess.run(
+        ["pgrep", "-a", "-u", str(os.getuid()), "-x", "elavo-greeter"],
+        capture_output=True,
+        text=True,
+    )
+    return pgrep_lock_screen(result.stdout)
 
 
 def wake_screen():
     subprocess.run(["wlopm", "--on", "*"], capture_output=True)
 
 
-def ask_shutdown():
-    log("ask to shut down")
+def suspend():
+    """The panel's Sleep action: logind Suspend, the same one as the sun menu.
+
+    swayidle's before-sleep still runs the greeter lock and waits until that
+    command returns. A lock that is already up is left as it is.
+    """
+    log("sleep")
     result = subprocess.run(
-        [PANEL_ACTION, "shut-down"],
+        [PANEL_ACTION, "sleep"],
         capture_output=True,
         text=True,
     )
     if result.returncode != 0:
         detail = (result.stderr or result.stdout).strip()
-        log(detail or "the panel did not show shut down")
+        log(detail or "the panel did not suspend")
+
+
+def lock_screen():
+    """The panel's Lock Screen action, the same one Super+Ctrl+Q runs."""
+    log("lock")
+    result = subprocess.run(
+        [PANEL_ACTION, "lock"],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout).strip()
+        log(detail or "the panel did not lock the screen")
 
 
 def _ioctl(fd, number, size, buf):
@@ -273,11 +357,16 @@ def run():
             presses = key_downs(blob[:whole])
             buffers[fd] = blob[whole:]
             for _press in range(presses):
-                if decide(screen_on(), session_locked(), time.monotonic() < resume_until) == "wake":
+                action = decide(screen_on(), session_locked(), time.monotonic() < resume_until)
+                if action == "wake":
                     log("wake")
                     wake_screen()
+                elif action == "lock":
+                    lock_screen()
+                elif action == "sleep":
+                    suspend()
                 else:
-                    ask_shutdown()
+                    log(f"ignored {action}")
 
 
 def main():

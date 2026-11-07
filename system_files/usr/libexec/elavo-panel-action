@@ -1,14 +1,14 @@
 #!/bin/sh
-# Run one action of the panel. Shut Down, Log Out, and Lock are implemented
-# there. The power button and the labwc keybinds call this so a change to
-# those questions is a change in one place.
+# Run one action of the panel. Sleep, Shut Down, Log Out, and Lock are
+# implemented there. The power button and the labwc keybinds call this so
+# a change to those actions is a change in one place.
 set -eu
 
 action=${1:-}
 case "$action" in
-    shut-down|lock|log-out) ;;
+    shut-down|lock|log-out|sleep) ;;
     *)
-        echo "elavo-panel-action: expected shut-down, lock, or log-out" >&2
+        echo "elavo-panel-action: expected shut-down, lock, log-out, or sleep" >&2
         exit 1
         ;;
 esac
