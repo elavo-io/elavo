@@ -1,0 +1,10 @@
+# Let the logged-in session read the ACPI power button.
+#
+# Numbered 72 so it runs after 71-seat.rules and before 73-seat-late.rules.
+# 73 runs the uaccess builtin for a tag that is already set, and logind
+# retriggers devices with that current tag when the session becomes active.
+# Matching only ACTION=="add" runs before anyone is logged in, so the ACL is
+# never granted. Once the tag is current, 71-seat.rules also puts the device
+# on the seat; LIBINPUT_IGNORE_DEVICE keeps labwc from treating the button
+# as a keyboard. The service reads the event node itself.
+SUBSYSTEM=="input", KERNEL=="event*", ATTRS{name}=="Power Button", TAG+="uaccess", ENV{LIBINPUT_IGNORE_DEVICE}="1"
