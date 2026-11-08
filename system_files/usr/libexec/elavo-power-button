@@ -11,6 +11,11 @@ session locked or unlocked as it was.
 Super+Shift+Q asks whether to log out through elavo-panel-action as well.
 Holding the button for several seconds is the firmware's power-off and
 cannot be changed here.
+
+The press arrives on the ACPI node named Power Button, or, on some
+machines, on Intel HID 5 button array. That Intel node also carries the
+volume keys. Those are left for the desktop. A second power key that
+arrives immediately after the first is the same press reported twice.
 """
 
 import glob
@@ -27,7 +32,11 @@ KEY_POWER = 116
 EV_KEY = 0x01
 EVENT = struct.Struct("llHHi")
 PANEL_ACTION = os.environ.get("ELAVO_PANEL_ACTION", "/usr/libexec/elavo-panel-action")
-POWER_BUTTON_NAME = "Power Button"
+# Intel HID events also advertises KEY_POWER on some machines and is not
+# where the button press arrives. Matching it would add a second reader.
+POWER_BUTTON_NAMES = ("Power Button", "Intel HID 5 button array")
+# One physical press can be reported by the ACPI node and the Intel node.
+SAME_PRESS_S = 0.3
 
 
 def decide(screen_on, locked, resume_grace):
@@ -115,9 +124,19 @@ def self_test():
     assert parse_sleep("Monitoring signals") is None
     press = EVENT.pack(0, 0, EV_KEY, KEY_POWER, 1)
     release = EVENT.pack(0, 0, EV_KEY, KEY_POWER, 0)
+    volume_up = EVENT.pack(0, 0, EV_KEY, 115, 1)
+    volume_down = EVENT.pack(0, 0, EV_KEY, 114, 1)
     assert key_downs(press + release) == 1
     assert key_downs(release) == 0
+    assert key_downs(volume_up + volume_down) == 0
+    assert key_downs(volume_up + press + volume_down) == 1
     assert EVENT.size == 24
+    assert "Power Button" in POWER_BUTTON_NAMES
+    assert "Intel HID 5 button array" in POWER_BUTTON_NAMES
+    assert "Intel HID events" not in POWER_BUTTON_NAMES
+    assert accept_press(10.0, None)
+    assert accept_press(10.1, 10.0) is False
+    assert accept_press(10.0 + SAME_PRESS_S, 10.0)
     print("self-test ok")
 
 
@@ -233,11 +252,37 @@ def has_power_key(fd):
     return bool(buf[KEY_POWER // 8] & (1 << (KEY_POWER % 8)))
 
 
-def open_power_buttons():
-    """Event devices named Power Button. Other input devices are left alone."""
+def accept_press(now, last):
+    """False when this power key is the same press reported again."""
+    return last is None or now - last >= SAME_PRESS_S
+
+
+def power_button_paths():
+    """Event nodes whose sysfs name is one this service watches.
+
+    The name is readable without opening the device. Other event nodes stay
+    closed, including ones the session itself is not allowed to read.
+    """
+    found = []
+    for path in sorted(glob.glob("/sys/class/input/event*/device/name")):
+        try:
+            name = open(path).read().strip()
+        except OSError:
+            continue
+        if name not in POWER_BUTTON_NAMES:
+            continue
+        event = path.removeprefix("/sys/class/input/").split("/", 1)[0]
+        found.append(f"/dev/input/{event}")
+    return found
+
+
+def open_power_buttons(already):
+    """Power-button event devices not already open. Other devices are left alone."""
     opened = []
     denied = False
-    for path in sorted(glob.glob("/dev/input/event*")):
+    for path in power_button_paths():
+        if path in already:
+            continue
         try:
             fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK)
         except PermissionError:
@@ -246,8 +291,8 @@ def open_power_buttons():
         except OSError:
             continue
         try:
-            if device_name(fd) == POWER_BUTTON_NAME and has_power_key(fd):
-                opened.append(fd)
+            if device_name(fd) in POWER_BUTTON_NAMES and has_power_key(fd):
+                opened.append((path, fd))
                 continue
         except OSError:
             pass
@@ -307,25 +352,37 @@ class SleepWatch:
 
 def run():
     buttons = []
+    paths = {}
     buffers = {}
+    denied = True
     denied_logged = False
+    last_press = None
     resume_until = 0.0
     sleep = SleepWatch()
 
     while True:
-        if not buttons:
-            buttons, denied = open_power_buttons()
-            buffers = {fd: b"" for fd in buttons}
+        if denied or not buttons:
+            found, denied = open_power_buttons(set(paths.values()))
+            for path, fd in found:
+                buttons.append(fd)
+                paths[fd] = path
+                buffers[fd] = b""
+                log(f"watching {device_name(fd)}")
             if not buttons:
                 if denied and not denied_logged:
                     log("the power button is not readable yet")
                     denied_logged = True
                 time.sleep(2)
                 continue
-            for fd in buttons:
-                log(f"watching {device_name(fd)}")
+            if denied and not denied_logged:
+                log("a power button is not readable yet")
+                denied_logged = True
 
-        readable, _, _ = select.select(buttons + [sleep.fd], [], [], None)
+        readable, _, _ = select.select(
+            buttons + [sleep.fd], [], [], 2.0 if denied else None
+        )
+        if not readable:
+            continue
         if sleep.fd in readable:
             for line in sleep.lines():
                 state = parse_sleep(line)
@@ -345,11 +402,13 @@ def run():
                 log(f"power button closed: {error}")
                 os.close(fd)
                 buttons.remove(fd)
+                paths.pop(fd, None)
                 buffers.pop(fd, None)
                 continue
             if not chunk:
                 os.close(fd)
                 buttons.remove(fd)
+                paths.pop(fd, None)
                 buffers.pop(fd, None)
                 continue
             blob = buffers.get(fd, b"") + chunk
@@ -357,7 +416,12 @@ def run():
             presses = key_downs(blob[:whole])
             buffers[fd] = blob[whole:]
             for _press in range(presses):
-                action = decide(screen_on(), session_locked(), time.monotonic() < resume_until)
+                now = time.monotonic()
+                if not accept_press(now, last_press):
+                    log("ignored repeated power key")
+                    continue
+                last_press = now
+                action = decide(screen_on(), session_locked(), now < resume_until)
                 if action == "wake":
                     log("wake")
                     wake_screen()
