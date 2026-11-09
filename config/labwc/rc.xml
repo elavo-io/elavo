@@ -137,4 +137,12 @@
       <clickMethod>clickfinger</clickMethod>
     </device>
   </libinput>
+  <!-- The panel's Shut Down, Restart and Log Out confirmations stay above
+       every other window. GTK makes a new toplevel each time one opens, so
+       this first-map action applies on every showing. -->
+  <windowRules>
+    <windowRule identifier="io.elavo.Panel" type="dialog">
+      <action name="ToggleAlwaysOnTop" />
+    </windowRule>
+  </windowRules>
 </labwc_config>
