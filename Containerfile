@@ -6,7 +6,7 @@ ARG FEDORA_VERSION=44
 # Folio (the panel, the dock, Lens, and the app switcher), built at a pinned
 # tag, on the same Fedora release as the base image.
 FROM registry.fedoraproject.org/fedora:${FEDORA_VERSION} AS folio
-ARG ELAVO_FOLIO_REF=v0.3.5.0
+ARG ELAVO_FOLIO_REF=v0.3.5.1
 RUN dnf5 install -y git gcc pkgconf-pkg-config rust cargo \
         gtk4-devel gtk4-layer-shell-devel wayland-devel && \
     dnf5 clean all
