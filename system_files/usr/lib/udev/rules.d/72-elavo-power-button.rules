@@ -11,7 +11,9 @@
 # seat, and LIBINPUT_IGNORE_DEVICE keeps labwc from treating it as a keyboard.
 #
 # Some machines report the press on "Intel HID 5 button array" instead. That
-# same node carries the volume keys, so it stays visible to the desktop. The
-# service reads the power key from it and ignores the others.
+# same node carries the volume keys. It stays visible to the session so the
+# service can read it. The node is a power switch, not a keyboard, so the
+# service changes the volume from those keys. Keyboard volume keys are bound
+# in labwc.
 SUBSYSTEM=="input", KERNEL=="event*", ATTRS{name}=="Power Button", TAG+="uaccess", ENV{LIBINPUT_IGNORE_DEVICE}="1"
 SUBSYSTEM=="input", KERNEL=="event*", ATTRS{name}=="Intel HID 5 button array", TAG+="uaccess"

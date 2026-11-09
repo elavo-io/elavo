@@ -14,8 +14,11 @@ cannot be changed here.
 
 The press arrives on the ACPI node named Power Button, or, on some
 machines, on Intel HID 5 button array. That Intel node also carries the
-volume keys. Those are left for the desktop. A second power key that
-arrives immediately after the first is the same press reported twice.
+volume keys. It is a power switch, so the compositor never sees those
+keys; this service changes the volume. A keyboard's volume keys are
+separate and are bound in labwc to `elavo-power-button --volume`. A
+second power key that arrives immediately after the first is the same
+press reported twice.
 """
 
 import glob
@@ -28,8 +31,12 @@ import time
 
 # The press that woke the machine arrives just after resume.
 RESUME_GRACE_S = 2.0
+KEY_MUTE = 113
+KEY_VOLUMEDOWN = 114
+KEY_VOLUMEUP = 115
 KEY_POWER = 116
 EV_KEY = 0x01
+SINK = "@DEFAULT_AUDIO_SINK@"
 EVENT = struct.Struct("llHHi")
 PANEL_ACTION = os.environ.get("ELAVO_PANEL_ACTION", "/usr/libexec/elavo-panel-action")
 # Intel HID events also advertises KEY_POWER on some machines and is not
@@ -61,15 +68,42 @@ def parse_sleep(line):
     return None
 
 
-def key_downs(blob):
-    """KEY_POWER presses in one read. The release arrives in the same moment."""
-    downs = 0
+def key_actions(blob):
+    """Actions in one read. Power and mute count the press. Volume also repeats."""
+    actions = []
     while len(blob) >= EVENT.size:
         _sec, _usec, typ, code, value = EVENT.unpack_from(blob)
         blob = blob[EVENT.size :]
-        if typ == EV_KEY and code == KEY_POWER and value == 1:
-            downs += 1
-    return downs
+        if typ != EV_KEY:
+            continue
+        if code == KEY_POWER and value == 1:
+            actions.append("power")
+        elif code == KEY_VOLUMEUP and value in (1, 2):
+            actions.append("up")
+        elif code == KEY_VOLUMEDOWN and value in (1, 2):
+            actions.append("down")
+        elif code == KEY_MUTE and value == 1:
+            actions.append("mute")
+    return actions
+
+
+def volume_commands(action):
+    """wpctl argv lists for one volume-key action. Empty when unknown."""
+    if action == "up":
+        return [
+            ["wpctl", "set-mute", SINK, "0"],
+            ["wpctl", "set-volume", "-l", "1.0", SINK, "5%+"],
+        ]
+    if action == "down":
+        return [["wpctl", "set-volume", "-l", "1.0", SINK, "5%-"]]
+    if action == "mute":
+        return [["wpctl", "set-mute", SINK, "toggle"]]
+    return []
+
+
+def apply_volume(action):
+    for argv in volume_commands(action):
+        subprocess.run(argv, capture_output=True)
 
 
 def self_test():
@@ -124,12 +158,23 @@ def self_test():
     assert parse_sleep("Monitoring signals") is None
     press = EVENT.pack(0, 0, EV_KEY, KEY_POWER, 1)
     release = EVENT.pack(0, 0, EV_KEY, KEY_POWER, 0)
-    volume_up = EVENT.pack(0, 0, EV_KEY, 115, 1)
-    volume_down = EVENT.pack(0, 0, EV_KEY, 114, 1)
-    assert key_downs(press + release) == 1
-    assert key_downs(release) == 0
-    assert key_downs(volume_up + volume_down) == 0
-    assert key_downs(volume_up + press + volume_down) == 1
+    volume_up = EVENT.pack(0, 0, EV_KEY, KEY_VOLUMEUP, 1)
+    volume_repeat = EVENT.pack(0, 0, EV_KEY, KEY_VOLUMEUP, 2)
+    volume_down = EVENT.pack(0, 0, EV_KEY, KEY_VOLUMEDOWN, 1)
+    mute = EVENT.pack(0, 0, EV_KEY, KEY_MUTE, 1)
+    mute_up = EVENT.pack(0, 0, EV_KEY, KEY_MUTE, 0)
+    assert key_actions(press + release) == ["power"]
+    assert key_actions(release) == []
+    assert key_actions(volume_up + volume_down) == ["up", "down"]
+    assert key_actions(volume_repeat) == ["up"]
+    assert key_actions(volume_up + press + volume_down) == ["up", "power", "down"]
+    assert key_actions(mute + mute_up) == ["mute"]
+    assert volume_commands("up")[0][:3] == ["wpctl", "set-mute", SINK]
+    assert volume_commands("up")[1][-1] == "5%+"
+    assert volume_commands("down")[0][-1] == "5%-"
+    assert volume_commands("mute")[0][-1] == "toggle"
+    assert volume_commands("nope") == []
+    assert "up" in main.__code__.co_consts or "--volume" in main.__code__.co_consts
     assert EVENT.size == 24
     assert "Power Button" in POWER_BUTTON_NAMES
     assert "Intel HID 5 button array" in POWER_BUTTON_NAMES
@@ -413,29 +458,35 @@ def run():
                 continue
             blob = buffers.get(fd, b"") + chunk
             whole = len(blob) - (len(blob) % EVENT.size)
-            presses = key_downs(blob[:whole])
+            actions = key_actions(blob[:whole])
             buffers[fd] = blob[whole:]
-            for _press in range(presses):
+            for action in actions:
+                if action != "power":
+                    apply_volume(action)
+                    continue
                 now = time.monotonic()
                 if not accept_press(now, last_press):
                     log("ignored repeated power key")
                     continue
                 last_press = now
-                action = decide(screen_on(), session_locked(), now < resume_until)
-                if action == "wake":
+                chosen = decide(screen_on(), session_locked(), now < resume_until)
+                if chosen == "wake":
                     log("wake")
                     wake_screen()
-                elif action == "lock":
+                elif chosen == "lock":
                     lock_screen()
-                elif action == "sleep":
+                elif chosen == "sleep":
                     suspend()
                 else:
-                    log(f"ignored {action}")
+                    log(f"ignored {chosen}")
 
 
 def main():
     if "--self-test" in sys.argv:
         self_test()
+        return
+    if len(sys.argv) == 3 and sys.argv[1] == "--volume":
+        apply_volume(sys.argv[2])
         return
     run()
 

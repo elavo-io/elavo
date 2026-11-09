@@ -93,6 +93,15 @@
     <keybind key="W-C-Right">
       <action name="GoToDesktop" to="right" wrap="yes" />
     </keybind>
+    <keybind key="XF86AudioRaiseVolume">
+      <action name="Execute" command="/usr/libexec/elavo-power-button --volume up" />
+    </keybind>
+    <keybind key="XF86AudioLowerVolume">
+      <action name="Execute" command="/usr/libexec/elavo-power-button --volume down" />
+    </keybind>
+    <keybind key="XF86AudioMute">
+      <action name="Execute" command="/usr/libexec/elavo-power-button --volume mute" />
+    </keybind>
     <keybind key="Print">
       <action name="Execute" command="/usr/libexec/elavo-grim-region" />
     </keybind>
