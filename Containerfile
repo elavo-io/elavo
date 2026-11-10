@@ -15,6 +15,19 @@ RUN git clone --depth 1 --branch "${ELAVO_FOLIO_REF}" \
 WORKDIR /src
 RUN cargo build --release --locked && DESTDIR=/out scripts/install
 
+# The on-screen keyboard. It is also the session's input method, with the
+# period on double-space that Folio's elavo-input used to add. main until
+# the first tag; pin it like Folio after that.
+FROM registry.fedoraproject.org/fedora:${FEDORA_VERSION} AS keyboard
+ARG ELAVO_KEYBOARD_REF=main
+RUN dnf5 install -y git gcc pkgconf-pkg-config rust cargo \
+        gtk4-devel gtk4-layer-shell-devel wayland-devel && \
+    dnf5 clean all
+RUN git clone --depth 1 --branch "${ELAVO_KEYBOARD_REF}" \
+        https://github.com/elavo-io/elavo-keyboard.git /src
+WORKDIR /src
+RUN cargo build --release --locked && DESTDIR=/out scripts/install
+
 # System Settings, built the same way. Its Desktop & Dock pane embeds Folio's
 # dock settings page, which Cargo fetches at the tag in its Cargo.toml.
 # main until the first tag; pin it like Folio after that.
@@ -79,6 +92,7 @@ COPY build_files /
 COPY system_files /system_files
 COPY config /config
 COPY --from=folio /out /folio_files
+COPY --from=keyboard /out /keyboard_files
 COPY --from=system-settings /out /system_settings_files
 COPY --from=app-bay /out /app_bay_files
 COPY --from=applications /out /applications_files

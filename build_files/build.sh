@@ -149,6 +149,8 @@ test -x /usr/bin/labwc
 # Folio's panel, dock, Lens, app switcher, text input, and desktop (the folio
 # stage in the Containerfile). They are wanted by graphical-session.target,
 # which elavo-session.target (started from labwc's autostart) pulls in.
+# Folio's text input, elavo-input, is installed but not enabled:
+# elavo-keyboard below replaces it.
 cp -a /ctx/folio_files/. /
 test -x /usr/bin/elavo-panel
 test -x /usr/bin/elavo-dock
@@ -156,7 +158,17 @@ test -x /usr/bin/elavo-lens
 test -x /usr/bin/elavo-switcher
 test -x /usr/bin/elavo-input
 test -x /usr/bin/elavo-desktop
-systemctl --global enable elavo-panel.service elavo-dock.service elavo-lens.service elavo-switcher.service elavo-input.service elavo-desktop.service
+systemctl --global enable elavo-panel.service elavo-dock.service elavo-lens.service elavo-switcher.service elavo-desktop.service
+
+# The on-screen keyboard (the keyboard stage in the Containerfile). It is
+# also the session's input method and adds the period on double-space, as
+# elavo-input did. labwc allows one input method per seat, so only this one
+# is enabled, and its unit conflicts with elavo-input.service. The
+# Touchscreen pane in System Settings sets when the keyboard shows.
+cp -a /ctx/keyboard_files/. /
+test -x /usr/bin/elavo-keyboard
+test -f /usr/lib/systemd/user/elavo-keyboard.service
+systemctl --global enable elavo-keyboard.service
 # The login and lock screen. greetd's config.toml runs it in cage, and
 # elavo-idle runs it with --lock. The lock checks passwords with
 # /etc/pam.d/elavo-lock. Sessions publish their wallpaper for it through
@@ -454,7 +466,7 @@ test ! -e /etc/systemd/system/timers.target.wants/rpm-ostreed-automatic.timer
 osrel=/usr/lib/os-release
 test -f "${osrel}"
 test -L /etc/os-release
-elavo_version=0.3.3.4
+elavo_version=0.3.3.5
 version_id=$(sed -n 's/^VERSION_ID=//p' "${osrel}" | tr -d "\"'")
 [[ "${version_id}" =~ ^[0-9]+$ ]]
 kept_version_id=$(sed -n 's/^VERSION_ID=//p' "${osrel}")
