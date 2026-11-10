@@ -17,7 +17,7 @@ The image boots to `greetd` and Folio's login screen, `elavo-greeter`, then a la
 System Settings comes from [elavo-system-settings](https://github.com/elavo-io/elavo-system-settings), built in the Containerfile's `system-settings` stage at `ELAVO_SYSTEM_SETTINGS_REF`. The panel's System Settings… item opens it, and the dock's Dock Settings… opens its Desktop & Dock pane. It relies on these user services the image enables:
 
 - `elavo-idle.service` runs `/usr/libexec/elavo-idle`, which starts `swayidle` with the lock and display-off times from `~/.config/elavo/idle.conf` (5 and 10 minutes until the Lock Screen pane changes them). It also handles `loginctl lock-session` and locks before sleep. The lock screen is `elavo-greeter --lock`, which checks the password with `/etc/pam.d/elavo-lock`.
-- `elavo-polkit-agent.service` is the administrator password prompt (`mate-polkit`) for software updates, users, the date and time, and the computer's name.
+- `elavo-polkit-agent.service` is the administrator password prompt (Folio's `elavo-polkit-agent`) for software updates, users, the date and time, and the computer's name.
 - `kanshi.service` reapplies the display arrangement the Displays pane saves. A drop-in keeps it stopped until the first one is saved.
 - `elavo-power-button.service` reads the laptop power button. A short press while the display is on and the session is unlocked runs the panel's Lock Screen action. On the lock screen, a short press runs the panel's Sleep action. A press while the display is off, or just after the machine wakes, turns the display on and leaves the lock as it is. Holding the button for several seconds is the laptop's own power-off.
 

@@ -10,9 +10,10 @@ cp -avf "/ctx/system_files"/. /
 # qt6-wayland is not a Fedora package; the Wayland Qt platform is qt6-qtwayland.
 # cage hosts Folio's elavo-greeter at login, and nothing else.
 # NetworkManager, PipeWire, and WirePlumber are already on base-main.
-# kanshi applies the display arrangement System Settings saves. mate-polkit
-# is the password prompt for pkexec and polkit D-Bus calls; polkit-gnome is
-# not packaged for Fedora 44. accountsservice, polkit, and pciutils (lspci,
+# kanshi applies the display arrangement System Settings saves. Folio's
+# elavo-polkit-agent is the password prompt for pkexec and polkit D-Bus
+# calls; mate-polkit stays installed as a fallback agent (polkit-gnome is
+# not packaged for Fedora 44). accountsservice, polkit, and pciutils (lspci,
 # for About's graphics row) are on base-main today; they are listed so that
 # stays true. ImageMagick prepares account pictures and ffmpeg shows the
 # camera in Change Picture.
@@ -183,7 +184,7 @@ test -x /usr/bin/elavo-system-settings
 test -x /usr/libexec/elavo-system-settings-helper
 test -f /usr/share/applications/io.elavo.SystemSettings.desktop
 test -f /usr/share/polkit-1/actions/io.elavo.SystemSettings.policy
-test -x /usr/libexec/polkit-mate-authentication-agent-1
+test -x /usr/libexec/elavo-polkit-agent
 test -f /usr/lib/systemd/user/kanshi.service
 test -x /usr/bin/lspci
 systemctl --global enable elavo-idle.service elavo-wallpaper.service \
