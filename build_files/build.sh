@@ -27,6 +27,7 @@ cp -avf "/ctx/system_files"/. /
 
 dnf5 install -y \
     wlroots \
+    scenefx \
     libsfdo \
     greetd \
     cage \
@@ -141,8 +142,8 @@ test -x /usr/bin/ffmpeg
 test -x /usr/libexec/elavo-wallpaper
 
 # labwc from the mods stage. Nothing in the package set Requires: labwc
-# (checked on Fedora 44), so the distro package is not installed. wlroots
-# and libsfdo above are the runtime libraries the mods build links.
+# (checked on Fedora 44), so the distro package is not installed. wlroots,
+# scenefx and libsfdo above are the runtime libraries the mods build links.
 cp -a /ctx/labwc_files/. /
 test -x /usr/bin/labwc
 
@@ -286,7 +287,7 @@ test -f /usr/lib/firewalld/zones/FedoraWorkstation.xml
 # bars, and Firefox's window buttons. The icon theme carries the panel's sun
 # and Elavo's app icons, and inherits Adwaita for everything else. The stamp
 # tells elavo-user-theme which build each account's copy came from.
-visuals_theme_rev=fe633371ce53e889956307d2e95ec01d54b42020
+visuals_theme_rev=e9695b36dc15452f8615239cda84e7b26bb61bdb
 theme_tmp=$(mktemp -d)
 curl -fsSL -o "${theme_tmp}/visuals.tar.gz" \
     "https://github.com/elavo-io/elavo-visuals/archive/${visuals_theme_rev}.tar.gz"

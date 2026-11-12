@@ -67,10 +67,13 @@ RUN cargo build --release --locked && make -C nautilus && DESTDIR=/out scripts/i
 # labwc with the mods layer, built at a pinned revision of elavo-labwc-mods.
 # main until the first tag; pin a tag the way Folio is pinned after that.
 # The stage clones elavo-labwc at the commit in that repo's LABWC_REF.
+# scenefx-devel is the SceneFX renderer the mods' scenefx patch links
+# (rounded corners, shadows and blur); Fedora 44 packages 0.5, the version
+# the patch pins, so meson finds it and skips its bundled-source fallback.
 FROM registry.fedoraproject.org/fedora:${FEDORA_VERSION} AS labwc
 ARG ELAVO_LABWC_MODS_REF=main
 RUN dnf5 install -y git gcc meson ninja-build pkgconf-pkg-config \
-        wlroots-devel wayland-devel wayland-protocols-devel \
+        wlroots-devel scenefx-devel wayland-devel wayland-protocols-devel \
         libxml2-devel cairo-devel pango-devel librsvg2-devel \
         libdrm-devel libinput-devel libxkbcommon-devel glib2-devel \
         libpng-devel pixman-devel libsfdo-devel xcb-util-wm-devel \
