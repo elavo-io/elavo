@@ -1,0 +1,293 @@
+#!/usr/bin/python3
+"""Accept already-paired Bluetooth devices at login and in the session.
+
+BlueZ drops a keyboard that connects on its own unless the device is
+trusted or an agent authorizes it. System Settings only marked a device
+trusted during pairing, and only registered an agent while it was open,
+so a paired keyboard failed at the login screen and after Settings was
+closed. This service starts with BlueZ, including before the greeter. It
+unblocks the radio, powers the adapter on, trusts already-paired devices,
+and stays the default agent so a paired keyboard can reconnect without
+opening Settings.
+
+New pairing still goes through System Settings. When Settings closes, it
+asks this service to become the default agent again.
+"""
+
+import subprocess
+import sys
+
+import gi
+
+gi.require_version("Gio", "2.0")
+from gi.repository import Gio, GLib
+
+BLUEZ = "org.bluez"
+ADAPTER = "org.bluez.Adapter1"
+DEVICE = "org.bluez.Device1"
+AGENT_MANAGER = "org.bluez.AgentManager1"
+AGENT_PATH = "/io/elavo/Bluetooth/Agent"
+BUS_NAME = "io.elavo.Bluetooth"
+OBJECT_PATH = "/io/elavo/Bluetooth"
+IFACE = "io.elavo.Bluetooth1"
+
+AGENT_XML = """<node>
+  <interface name="org.bluez.Agent1">
+    <method name="Release"/>
+    <method name="RequestPinCode"><arg type="o" direction="in"/><arg type="s" direction="out"/></method>
+    <method name="DisplayPinCode"><arg type="o" direction="in"/><arg type="s" direction="in"/></method>
+    <method name="RequestPasskey"><arg type="o" direction="in"/><arg type="u" direction="out"/></method>
+    <method name="DisplayPasskey"><arg type="o" direction="in"/><arg type="u" direction="in"/><arg type="q" direction="in"/></method>
+    <method name="RequestConfirmation"><arg type="o" direction="in"/><arg type="u" direction="in"/></method>
+    <method name="RequestAuthorization"><arg type="o" direction="in"/></method>
+    <method name="AuthorizeService"><arg type="o" direction="in"/><arg type="s" direction="in"/></method>
+    <method name="Cancel"/>
+  </interface>
+</node>"""
+
+SERVICE_XML = """<node>
+  <interface name="io.elavo.Bluetooth1">
+    <method name="ReclaimDefault"/>
+  </interface>
+</node>"""
+
+
+def as_bool(value):
+    if isinstance(value, GLib.Variant):
+        value = value.unpack()
+    return bool(value)
+
+
+def call(conn, dest, path, iface, method, params=None, reply=None, timeout=3000):
+    try:
+        return conn.call_sync(
+            dest,
+            path,
+            iface,
+            method,
+            params,
+            GLib.VariantType(reply) if reply else None,
+            Gio.DBusCallFlags.NONE,
+            timeout,
+            None,
+        )
+    except GLib.Error:
+        return None
+
+
+def set_property(conn, path, iface, name, value):
+    return (
+        call(
+            conn,
+            BLUEZ,
+            path,
+            "org.freedesktop.DBus.Properties",
+            "Set",
+            GLib.Variant("(ssv)", (iface, name, value)),
+        )
+        is not None
+    )
+
+
+def is_paired(conn, path):
+    result = call(
+        conn,
+        BLUEZ,
+        path,
+        "org.freedesktop.DBus.Properties",
+        "Get",
+        GLib.Variant("(ss)", (DEVICE, "Paired")),
+        "(v)",
+        2000,
+    )
+    if result is None:
+        return False
+    return as_bool(result.unpack()[0])
+
+
+def managed_objects(conn):
+    result = call(
+        conn,
+        BLUEZ,
+        "/",
+        "org.freedesktop.DBus.ObjectManager",
+        "GetManagedObjects",
+        reply="(a{oa{sa{sv}}})",
+        timeout=5000,
+    )
+    if result is None:
+        return {}
+    return result.unpack()[0]
+
+
+def power_and_trust(conn):
+    for path, ifaces in managed_objects(conn).items():
+        if ADAPTER in ifaces:
+            set_property(conn, path, ADAPTER, "Powered", GLib.Variant("b", True))
+        if DEVICE in ifaces:
+            if as_bool(ifaces[DEVICE].get("Paired", False)):
+                set_property(conn, path, DEVICE, "Trusted", GLib.Variant("b", True))
+
+
+def wait_for_bluez():
+    conn = Gio.bus_get_sync(Gio.BusType.SYSTEM, None)
+    for _ in range(50):
+        result = call(
+            conn,
+            "org.freedesktop.DBus",
+            "/org/freedesktop/DBus",
+            "org.freedesktop.DBus",
+            "NameHasOwner",
+            GLib.Variant("(s)", (BLUEZ,)),
+            "(b)",
+            1000,
+        )
+        if result is not None and result.unpack()[0]:
+            return conn
+        GLib.usleep(200_000)
+    return None
+
+
+class Agent:
+    def __init__(self, conn):
+        self.conn = conn
+        self.agent_id = None
+        self.service_id = None
+
+    def register_objects(self):
+        agent_info = Gio.DBusNodeInfo.new_for_xml(AGENT_XML)
+        self.agent_id = self.conn.register_object(
+            AGENT_PATH,
+            agent_info.interfaces[0],
+            self._on_agent,
+            None,
+            None,
+        )
+        service_info = Gio.DBusNodeInfo.new_for_xml(SERVICE_XML)
+        self.service_id = self.conn.register_object(
+            OBJECT_PATH,
+            service_info.interfaces[0],
+            self._on_service,
+            None,
+            None,
+        )
+        if not self.agent_id or not self.service_id:
+            raise RuntimeError("could not export the Bluetooth agent")
+
+    def become_default(self):
+        result = call(
+            self.conn,
+            BLUEZ,
+            "/org/bluez",
+            AGENT_MANAGER,
+            "RegisterAgent",
+            GLib.Variant("(os)", (AGENT_PATH, "NoInputNoOutput")),
+        )
+        # AlreadyExists is fine: we stay registered and ask to be default.
+        call(
+            self.conn,
+            BLUEZ,
+            "/org/bluez",
+            AGENT_MANAGER,
+            "RequestDefaultAgent",
+            GLib.Variant("(o)", (AGENT_PATH,)),
+        )
+        return result
+
+    def _on_agent(self, _conn, _sender, _path, _iface, method, params, invocation):
+        if method in ("Release", "Cancel"):
+            # Release means System Settings became the default agent.
+            # Stay registered and wait for ReclaimDefault when it closes.
+            invocation.return_value(None)
+            return
+        if method in ("DisplayPinCode", "DisplayPasskey"):
+            invocation.return_value(None)
+            return
+        if method in ("RequestAuthorization", "AuthorizeService"):
+            path = params.unpack()[0]
+            if is_paired(self.conn, path):
+                set_property(self.conn, path, DEVICE, "Trusted", GLib.Variant("b", True))
+                invocation.return_value(None)
+            else:
+                invocation.return_dbus_error("org.bluez.Error.Rejected", "not paired")
+            return
+        invocation.return_dbus_error(
+            "org.bluez.Error.Rejected", "use System Settings to pair"
+        )
+
+    def _on_service(self, _conn, _sender, _path, _iface, method, _params, invocation):
+        if method == "ReclaimDefault":
+            self.become_default()
+            invocation.return_value(None)
+            return
+        invocation.return_dbus_error("org.freedesktop.DBus.Error.UnknownMethod", method)
+
+
+def on_objects_added(conn, _sender, _path, _iface, _signal, params):
+    path, ifaces = params.unpack()
+    if DEVICE in ifaces and as_bool(ifaces[DEVICE].get("Paired", False)):
+        set_property(conn, path, DEVICE, "Trusted", GLib.Variant("b", True))
+    if ADAPTER in ifaces:
+        set_property(conn, path, ADAPTER, "Powered", GLib.Variant("b", True))
+
+
+def on_properties_changed(conn, _sender, path, _iface, _signal, params):
+    iface, changed, _invalidated = params.unpack()
+    if iface == DEVICE and as_bool(changed.get("Paired", False)):
+        set_property(conn, path, DEVICE, "Trusted", GLib.Variant("b", True))
+    if iface == ADAPTER and "Powered" in changed and not as_bool(changed["Powered"]):
+        # Leave a deliberate off from the Control Center or Settings alone.
+        pass
+
+
+def main():
+    subprocess.run(["rfkill", "unblock", "bluetooth"], check=False)
+    conn = wait_for_bluez()
+    if conn is None:
+        print("elavo-bluetooth-agent: BlueZ did not appear", file=sys.stderr)
+        return 1
+
+    power_and_trust(conn)
+    agent = Agent(conn)
+    agent.register_objects()
+    agent.become_default()
+
+    conn.signal_subscribe(
+        BLUEZ,
+        "org.freedesktop.DBus.ObjectManager",
+        "InterfacesAdded",
+        None,
+        None,
+        Gio.DBusSignalFlags.NONE,
+        on_objects_added,
+        None,
+    )
+    conn.signal_subscribe(
+        BLUEZ,
+        "org.freedesktop.DBus.Properties",
+        "PropertiesChanged",
+        None,
+        None,
+        Gio.DBusSignalFlags.NONE,
+        on_properties_changed,
+        None,
+    )
+
+    owner = Gio.bus_own_name_on_connection(
+        conn,
+        BUS_NAME,
+        Gio.BusNameOwnerFlags.NONE,
+        None,
+        None,
+    )
+    if not owner:
+        print("elavo-bluetooth-agent: could not own io.elavo.Bluetooth", file=sys.stderr)
+        return 1
+
+    loop = GLib.MainLoop()
+    loop.run()
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

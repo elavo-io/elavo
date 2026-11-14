@@ -47,6 +47,7 @@ dnf5 install -y \
     wlr-randr \
     wlopm \
     bluez \
+    python3-gobject \
     brightnessctl \
     power-profiles-daemon \
     flatpak \
@@ -436,7 +437,11 @@ dconf update
 # for machines whose Wi-Fi connects only after login.
 chmod 755 /usr/lib/NetworkManager/dispatcher.d/90-elavo-flatpak-preinstall
 
-systemctl enable greetd.service elavo-flatpak-preinstall.service
+test -x /usr/libexec/elavo-bluetooth-agent
+test -f /usr/lib/systemd/system/elavo-bluetooth-agent.service
+test -f /usr/share/dbus-1/system.d/io.elavo.Bluetooth.conf
+systemctl enable greetd.service elavo-flatpak-preinstall.service \
+    elavo-bluetooth-agent.service
 systemctl set-default graphical.target
 
 # Automatic updates follow System Settings' two switches, saved in

@@ -1,15 +1,5 @@
 <?xml version="1.0"?>
+<!-- The old root menu (Terminal, Files, Log Out) is no longer used.
+     Desktop clicks are unbound in rc.xml. -->
 <openbox_menu>
-  <menu id="root-menu" label="Elavo">
-    <item label="Terminal">
-      <action name="Execute" command="foot" />
-    </item>
-    <item label="Files">
-      <action name="Execute" command="nautilus" />
-    </item>
-    <separator />
-    <item label="Log Out">
-      <action name="Exit" />
-    </item>
-  </menu>
 </openbox_menu>

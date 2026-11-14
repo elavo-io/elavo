@@ -137,6 +137,19 @@
       <clickMethod>clickfinger</clickMethod>
     </device>
   </libinput>
+  <!-- labwc's default mousebinds open the root menu on any desktop
+       click or tap. That leftover Terminal / Files / Log Out menu is
+       not part of Elavo, so the Root binds are cleared here. Other
+       default binds (title bar, resize, etc.) stay via <default />. -->
+  <mouse>
+    <default />
+    <context name="Root">
+      <mousebind button="Left" action="Press"></mousebind>
+      <mousebind button="Right" action="Press"></mousebind>
+      <mousebind button="Middle" action="Press"></mousebind>
+    </context>
+  </mouse>
+
   <!-- The panel's Shut Down, Restart and Log Out confirmations stay above
        every other window. GTK makes a new toplevel each time one opens, so
        this first-map action applies on every showing. -->
