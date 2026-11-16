@@ -35,6 +35,14 @@ dnf5 install -y \
     foot \
     nautilus \
     sushi \
+    gvfs-smb \
+    gvfs-nfs \
+    gvfs-afc \
+    gvfs-mtp \
+    gvfs-gphoto2 \
+    gvfs-archive \
+    bsdtar \
+    desktop-file-utils \
     xdg-desktop-portal \
     xdg-desktop-portal-gtk \
     xdg-desktop-portal-wlr \
@@ -258,6 +266,33 @@ fc-cache -f "${sans_flex_dir}"
 # Do not pipe this into grep -q. pipefail is on, grep -q closes at the
 # first hit, and fc-list then dies with SIGPIPE (exit 141).
 test -n "$(fc-list "Google Sans Flex" file)"
+# Files (the files stage) is the file manager: folders open in it
+# (inode/directory), and other apps' Show in Folder reaches it through
+# org.freedesktop.FileManager1. Its D-Bus service file replaces Nautilus'
+# for that name, so copy it after Nautilus is installed. Nautilus stays for
+# now: Folio's desktop uses its FileOperations2 interface and Sushi for
+# previews, and the panel's Files menus drive Nautilus windows; it leaves
+# the launcher so there is one Files.
+cp -a /ctx/files_files/. /
+test -x /usr/bin/elavo-files
+test -f /usr/share/applications/io.elavo.Files.desktop
+test -f /usr/share/dbus-1/services/io.elavo.Files.service
+grep -q '^Exec=/usr/bin/elavo-files ' /usr/share/dbus-1/services/org.freedesktop.FileManager1.service
+test -f /etc/xdg/autostart/io.elavo.Files.LocalSend.desktop
+desktop-file-edit --set-key=NoDisplay --set-value=true \
+    /usr/share/applications/org.gnome.Nautilus.desktop
+# The session's own defaults (XDG_CURRENT_DESKTOP=elavo), ahead of the
+# distribution's: Files for folders, Nautilus after it.
+cat > /usr/share/applications/elavo-mimeapps.list <<'MIMEAPPS'
+[Default Applications]
+inode/directory=io.elavo.Files.desktop;org.gnome.Nautilus.desktop;
+MIMEAPPS
+command -v openssl >/dev/null
+command -v zip >/dev/null
+command -v 7z >/dev/null
+command -v bsdtar >/dev/null
+test -f /usr/share/gvfs/mounts/smb.mount
+test -f /usr/share/gvfs/mounts/afc.mount
 # App Bay, the catalog window (the app-bay stage). libsoup3 above is the
 # library it links. The Applications allowlist locks an entry from this
 # desktop file.
@@ -272,6 +307,7 @@ update-desktop-database /usr/share/applications
 grep -q '^application/vnd.flatpak.ref=.*io.elavo.Applications.desktop' /usr/share/applications/mimeinfo.cache
 grep -q '^application/vnd.flatpak=.*io.elavo.Applications.desktop' /usr/share/applications/mimeinfo.cache
 grep -q '^application/vnd.appimage=.*io.elavo.Applications.desktop' /usr/share/applications/mimeinfo.cache
+grep -q '^inode/directory=.*io.elavo.Files.desktop' /usr/share/applications/mimeinfo.cache
 systemctl --global enable elavo-applications.service
 systemctl enable elavo-applications-system.service elavo-applications-system.path
 
@@ -472,7 +508,7 @@ test ! -e /etc/systemd/system/timers.target.wants/rpm-ostreed-automatic.timer
 osrel=/usr/lib/os-release
 test -f "${osrel}"
 test -L /etc/os-release
-elavo_version=0.3.3.6
+elavo_version=0.3.3.7
 version_id=$(sed -n 's/^VERSION_ID=//p' "${osrel}" | tr -d "\"'")
 [[ "${version_id}" =~ ^[0-9]+$ ]]
 kept_version_id=$(sed -n 's/^VERSION_ID=//p' "${osrel}")

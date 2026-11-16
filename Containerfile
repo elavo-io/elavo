@@ -6,7 +6,7 @@ ARG FEDORA_VERSION=44
 # Folio (the panel, the dock, Lens, and the app switcher), built at a pinned
 # tag, on the same Fedora release as the base image.
 FROM registry.fedoraproject.org/fedora:${FEDORA_VERSION} AS folio
-ARG ELAVO_FOLIO_REF=v0.3.5.6
+ARG ELAVO_FOLIO_REF=v0.3.5.8
 RUN dnf5 install -y git gcc pkgconf-pkg-config rust cargo \
         gtk4-devel gtk4-layer-shell-devel wayland-devel && \
     dnf5 clean all
@@ -64,6 +64,19 @@ RUN git clone --depth 1 --branch "${ELAVO_APPLICATIONS_REF}" \
 WORKDIR /src
 RUN cargo build --release --locked && make -C nautilus && DESTDIR=/out scripts/install
 
+# Files, the file manager (elavo-files): Finder-style windows, LocalSend,
+# network shares and Eject. Its install script puts in the desktop file, the
+# D-Bus services for io.elavo.Files and org.freedesktop.FileManager1, and the
+# LocalSend receiver's autostart entry. Built at a pinned tag, like Folio.
+FROM registry.fedoraproject.org/fedora:${FEDORA_VERSION} AS files
+ARG ELAVO_FILES_REF=v0.1.0
+RUN dnf5 install -y git gcc pkgconf-pkg-config rust cargo gtk4-devel && \
+    dnf5 clean all
+RUN git clone --depth 1 --branch "${ELAVO_FILES_REF}" \
+        https://github.com/elavo-io/elavo-files.git /src
+WORKDIR /src
+RUN cargo build --release --locked && DESTDIR=/out scripts/install
+
 # labwc with the mods layer, built at a pinned revision of elavo-labwc-mods.
 # main until the first tag; pin a tag the way Folio is pinned after that.
 # The stage clones elavo-labwc at the commit in that repo's LABWC_REF.
@@ -99,6 +112,7 @@ COPY --from=keyboard /out /keyboard_files
 COPY --from=system-settings /out /system_settings_files
 COPY --from=app-bay /out /app_bay_files
 COPY --from=applications /out /applications_files
+COPY --from=files /out /files_files
 COPY --from=labwc /out /labwc_files
 
 # Base Image
