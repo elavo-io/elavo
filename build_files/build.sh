@@ -131,8 +131,17 @@ for dir in /usr/lib/modprobe.d /etc/modprobe.d /usr/lib/modules-load.d /etc/modu
 done
 depmod -a "${kver}"
 dnf5 remove -y akmod-wl akmods "kernel-devel-${kver}"
-sed -i 's/^enabled=1/enabled=0/' /etc/yum.repos.d/rpmfusion*.repo
-if grep -q '^enabled=1' /etc/yum.repos.d/rpmfusion*.repo; then
+# Fedora 45's release packages put the repo files in /usr/share/dnf5/repos.d;
+# earlier ones used /etc/yum.repos.d. Turn off whichever are present, then
+# ask dnf5 itself.
+rpmfusion_repos=(/etc/yum.repos.d/rpmfusion*.repo /usr/share/dnf5/repos.d/rpmfusion*.repo)
+for repo in "${rpmfusion_repos[@]}"; do
+    if [[ -e "${repo}" ]]; then
+        sed -i 's/^enabled=1/enabled=0/' "${repo}"
+    fi
+done
+enabled_repos="$(dnf5 repo list --enabled)"
+if grep -q rpmfusion <<<"${enabled_repos}"; then
     echo "RPM Fusion stayed enabled" >&2
     exit 1
 fi
@@ -406,7 +415,13 @@ patch_pam() {
     local group="$2"
     local line="$3"
     [[ -f "${file}" ]] || return 0
-    grep -qF "${line}" "${file}" && return 0
+    # Fedora 45's greetd file already has the module as "-auth ..." with
+    # other spacing. Compare without the leading dash and extra spaces.
+    local wanted present
+    wanted="$(tr -s '[:space:]' ' ' <<<"${line}")"
+    wanted="${wanted% }"
+    present="$(sed -E 's/^-//; s/[[:space:]]+/ /g' "${file}")"
+    grep -qF "${wanted}" <<<"${present}" && return 0
     awk -v group="${group}" -v line="${line}" '
         $1 == group { last = NR }
         { lines[NR] = $0 }
@@ -424,13 +439,25 @@ patch_pam() {
     ' "${file}" > "${file}.elavo"
     mv "${file}.elavo" "${file}"
 }
-test -f /etc/pam.d/greetd
-test -f /etc/pam.d/passwd
+# PAM reads /etc/pam.d first and falls back to /usr/lib/pam.d. Fedora 45's
+# greetd ships its file only in /usr/lib/pam.d; patch whichever is in effect.
+pam_file() {
+    if [[ -f "/etc/pam.d/$1" ]]; then
+        echo "/etc/pam.d/$1"
+    else
+        echo "/usr/lib/pam.d/$1"
+    fi
+}
+greetd_pam="$(pam_file greetd)"
+passwd_pam="$(pam_file passwd)"
+test -f "${greetd_pam}"
+test -f "${passwd_pam}"
 test -x /usr/bin/gnome-keyring-daemon
 test -e /usr/lib64/security/pam_gnome_keyring.so
-patch_pam /etc/pam.d/greetd auth "auth        optional      pam_gnome_keyring.so"
-patch_pam /etc/pam.d/greetd session "session     optional      pam_gnome_keyring.so auto_start"
-patch_pam /etc/pam.d/passwd password "password    optional      pam_gnome_keyring.so"
+patch_pam "${greetd_pam}" auth "auth        optional      pam_gnome_keyring.so"
+patch_pam "${greetd_pam}" session "session     optional      pam_gnome_keyring.so auto_start"
+patch_pam "${passwd_pam}" password "password    optional      pam_gnome_keyring.so"
+grep -q 'pam_gnome_keyring.so auto_start' "${greetd_pam}"
 
 # Splash from elavo-visuals main, bootscreen/elavo-new/elavo-boot. The images
 # are not stored in this repo. The image build takes whatever main is when
