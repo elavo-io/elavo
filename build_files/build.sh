@@ -24,6 +24,12 @@ cp -avf "/ctx/system_files"/. /
 # Fedora 44 does not package it. brcmfmac-firmware is the built-in Broadcom
 # Wi-Fi firmware (2015–2017 Intel Macs). The proprietary wl module is
 # installed further down and is not loaded.
+# Elavo Files is the file manager; Nautilus and Sushi are not installed.
+# localsearch indexes home for Files' search (org.freedesktop.LocalSearch3);
+# it used to arrive with Nautilus. glycin-thumbnailer and gst-thumbnailers
+# are the image, SVG, video, and audio thumbnailers Files and the desktop
+# run, and gvfs-fuse gives apps that do not use GIO a path into GVfs
+# mounts; Nautilus brought those too.
 
 dnf5 install -y \
     wlroots \
@@ -33,8 +39,10 @@ dnf5 install -y \
     cage \
     gtk4-layer-shell \
     foot \
-    nautilus \
-    sushi \
+    localsearch \
+    glycin-thumbnailer \
+    gst-thumbnailers \
+    gvfs-fuse \
     gvfs-smb \
     gvfs-nfs \
     gvfs-afc \
@@ -217,8 +225,8 @@ systemctl --global enable elavo-idle.service elavo-wallpaper.service \
 # with a default ACL, plus /var/.Trash so entries can go to the Trash from
 # another mount. The root service makes the locked entries the allowlist
 # names and an entry for every system Flatpak; each account's service
-# installs what that account drops in. Files loads the module that opens
-# entries as applications.
+# installs what that account drops in. elavo-applications still installs
+# its Nautilus module; with Nautilus gone nothing loads it.
 cp -a /ctx/applications_files/. /
 ln -sfn var/Applications /Applications
 test "$(readlink /Applications)" = var/Applications
@@ -268,25 +276,22 @@ fc-cache -f "${sans_flex_dir}"
 test -n "$(fc-list "Google Sans Flex" file)"
 # Files (the files stage) is the file manager: folders open in it
 # (inode/directory), and other apps' Show in Folder reaches it through
-# org.freedesktop.FileManager1. Its D-Bus service file replaces Nautilus'
-# for that name, so copy it after Nautilus is installed. Folio no longer
-# uses Nautilus or Sushi: the desktop's file operations, Undo and Quick
-# Look go through Files, and the panel's Files menus drive Files windows.
-# Nautilus stays installed for now; it leaves the launcher so there is one
-# Files.
+# org.freedesktop.FileManager1, which it D-Bus-activates. Folio's desktop
+# sends its file operations, Undo, and Quick Look to Files, and the panel's
+# Files menus drive Files windows.
 cp -a /ctx/files_files/. /
 test -x /usr/bin/elavo-files
 test -f /usr/share/applications/io.elavo.Files.desktop
 test -f /usr/share/dbus-1/services/io.elavo.Files.service
 grep -q '^Exec=/usr/bin/elavo-files ' /usr/share/dbus-1/services/org.freedesktop.FileManager1.service
 test -f /etc/xdg/autostart/io.elavo.Files.LocalSend.desktop
-desktop-file-edit --set-key=NoDisplay --set-value=true \
-    /usr/share/applications/org.gnome.Nautilus.desktop
+test ! -e /usr/share/applications/org.gnome.Nautilus.desktop
+test ! -e /usr/bin/sushi
 # The session's own defaults (XDG_CURRENT_DESKTOP=elavo), ahead of the
-# distribution's: Files for folders, Nautilus after it.
+# distribution's: Files for folders.
 cat > /usr/share/applications/elavo-mimeapps.list <<'MIMEAPPS'
 [Default Applications]
-inode/directory=io.elavo.Files.desktop;org.gnome.Nautilus.desktop;
+inode/directory=io.elavo.Files.desktop;
 MIMEAPPS
 command -v openssl >/dev/null
 command -v zip >/dev/null
@@ -294,6 +299,7 @@ command -v 7z >/dev/null
 command -v bsdtar >/dev/null
 test -f /usr/share/gvfs/mounts/smb.mount
 test -f /usr/share/gvfs/mounts/afc.mount
+command -v localsearch >/dev/null
 # App Bay, the catalog window (the app-bay stage). libsoup3 above is the
 # library it links. The Applications allowlist locks an entry from this
 # desktop file.
