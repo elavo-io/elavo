@@ -1,7 +1,7 @@
 # The Fedora release for the whole image. The base image and every build
 # stage below use it, so the apps link against the same GTK and libraries
 # the image ships. Change it here, and only here, to move to a new release.
-ARG FEDORA_VERSION=44
+ARG FEDORA_VERSION=45
 
 # Folio (the panel, the dock, Lens, and the app switcher), built at a pinned
 # tag, on the same Fedora release as the base image.
