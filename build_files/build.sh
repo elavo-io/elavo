@@ -271,7 +271,7 @@ test -n "$(fc-list "Google Sans Flex" file)"
 # org.freedesktop.FileManager1. Its D-Bus service file replaces Nautilus'
 # for that name, so copy it after Nautilus is installed. Nautilus stays for
 # now: Folio's desktop uses its FileOperations2 interface and Sushi for
-# previews, and the panel's Files menus drive Nautilus windows; it leaves
+# previews; the panel's Files menus drive Elavo Files windows; it leaves
 # the launcher so there is one Files.
 cp -a /ctx/files_files/. /
 test -x /usr/bin/elavo-files
@@ -508,7 +508,7 @@ test ! -e /etc/systemd/system/timers.target.wants/rpm-ostreed-automatic.timer
 osrel=/usr/lib/os-release
 test -f "${osrel}"
 test -L /etc/os-release
-elavo_version=0.3.3.7
+elavo_version=0.3.3.8
 version_id=$(sed -n 's/^VERSION_ID=//p' "${osrel}" | tr -d "\"'")
 [[ "${version_id}" =~ ^[0-9]+$ ]]
 kept_version_id=$(sed -n 's/^VERSION_ID=//p' "${osrel}")

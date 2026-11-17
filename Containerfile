@@ -6,7 +6,7 @@ ARG FEDORA_VERSION=44
 # Folio (the panel, the dock, Lens, and the app switcher), built at a pinned
 # tag, on the same Fedora release as the base image.
 FROM registry.fedoraproject.org/fedora:${FEDORA_VERSION} AS folio
-ARG ELAVO_FOLIO_REF=v0.3.5.8
+ARG ELAVO_FOLIO_REF=v0.3.5.9
 RUN dnf5 install -y git gcc pkgconf-pkg-config rust cargo \
         gtk4-devel gtk4-layer-shell-devel wayland-devel && \
     dnf5 clean all
@@ -69,7 +69,7 @@ RUN cargo build --release --locked && make -C nautilus && DESTDIR=/out scripts/i
 # D-Bus services for io.elavo.Files and org.freedesktop.FileManager1, and the
 # LocalSend receiver's autostart entry. Built at a pinned tag, like Folio.
 FROM registry.fedoraproject.org/fedora:${FEDORA_VERSION} AS files
-ARG ELAVO_FILES_REF=v0.1.0
+ARG ELAVO_FILES_REF=v0.1.1
 RUN dnf5 install -y git gcc pkgconf-pkg-config rust cargo gtk4-devel && \
     dnf5 clean all
 RUN git clone --depth 1 --branch "${ELAVO_FILES_REF}" \
