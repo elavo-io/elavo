@@ -48,7 +48,6 @@ dnf5 install -y \
     gvfs-afc \
     gvfs-mtp \
     gvfs-gphoto2 \
-    gvfs-archive \
     bsdtar \
     desktop-file-utils \
     xdg-desktop-portal \
