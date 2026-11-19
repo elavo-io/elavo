@@ -211,6 +211,7 @@ jobs:
             BASE_IMAGE="${IMAGE_REGISTRY}/${BASE_NAME}:${DEFAULT_TAG}"
           fi
           echo "IMAGE_REGISTRY=${IMAGE_REGISTRY}" >> ${GITHUB_ENV}
+          echo "BASE_NAME=${BASE_NAME}" >> ${GITHUB_ENV}
           echo "IMAGE_NAME=${BASE_NAME}-nvidia-${EDITION}" >> ${GITHUB_ENV}
           echo "DEFAULT_TAG=${DEFAULT_TAG}" >> ${GITHUB_ENV}
           echo "BASE_IMAGE=${BASE_IMAGE}" >> ${GITHUB_ENV}
@@ -220,7 +221,9 @@ jobs:
         env:
           EDITION: ${{ matrix.edition }}
         run: |
-          just build-nvidia \
+          # The Justfile's image_name comes from IMAGE_NAME, and build-nvidia
+          # appends -nvidia-<edition> itself, so give it the base name here.
+          IMAGE_NAME="${BASE_NAME}" just build-nvidia \
             "${EDITION}" \
             "${BASE_IMAGE}" \
             "${DEFAULT_TAG}"
