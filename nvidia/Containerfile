@@ -1,0 +1,51 @@
+# The two NVIDIA editions of Elavo, layered on the finished Elavo image.
+# The base image has no NVIDIA logic; everything NVIDIA is in this folder.
+#
+#   elavo-nvidia-open    Turing (2018) and newer: GTX 16 series, all RTX.
+#                        NVIDIA's open kernel modules, current driver.
+#   elavo-nvidia-legacy  Maxwell, Pascal, Volta: GTX 900/1000, Titan V,
+#                        GTX 750 Ti, GTX 745. Proprietary modules, 580 LTS.
+#
+# Kepler and older get no NVIDIA image; they stay on nouveau in the base.
+#
+# The kernel modules are not built here. They come prebuilt and signed
+# from Universal Blue's akmods images, the same ones Bazzite and Aurora
+# use: akmods-nvidia-open for the open edition, akmods-nvidia-lts for the
+# legacy one. Those images are tagged by kernel, so KERNEL_VERSION must
+# be the kernel in BASE_IMAGE. `just build-nvidia` reads it from the base
+# image and passes it; the build script stops if the two differ.
+#
+# Build one edition (from the repository root):
+#   just build-nvidia open
+#   just build-nvidia legacy
+
+ARG FEDORA_VERSION=45
+ARG BASE_IMAGE=ghcr.io/elavo-io/elavo:latest
+# main is Fedora's own kernel, the one base-main and Elavo ship.
+ARG KERNEL_FLAVOR=main
+ARG KERNEL_VERSION
+# nvidia-open or nvidia-lts, the Universal Blue akmods image name.
+ARG AKMODS_NVIDIA=nvidia-open
+# open or legacy, which picks nvidia/build-nvidia-<edition>.sh.
+ARG NVIDIA_EDITION=open
+
+FROM ghcr.io/ublue-os/akmods-${AKMODS_NVIDIA}:${KERNEL_FLAVOR}-${FEDORA_VERSION}-${KERNEL_VERSION} AS akmods-nvidia
+
+FROM scratch AS ctx
+COPY nvidia /
+
+FROM ${BASE_IMAGE}
+ARG NVIDIA_EDITION
+# A hash of this folder, passed by `just build-nvidia`. Podman does not
+# look at what a RUN step bind-mounts when it decides to reuse a cached
+# layer, so without this an edited script can be skipped locally.
+ARG NVIDIA_FILES_HASH=
+
+RUN --mount=type=bind,from=ctx,source=/,target=/ctx \
+    --mount=type=bind,from=akmods-nvidia,source=/rpms,target=/akmods-nvidia \
+    --mount=type=cache,dst=/var/cache \
+    --mount=type=cache,dst=/var/log \
+    --mount=type=tmpfs,dst=/tmp \
+    /ctx/build-nvidia-${NVIDIA_EDITION}.sh
+
+RUN bootc container lint

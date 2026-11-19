@@ -136,6 +136,63 @@ build $target_image=image_name $tag=default_tag:
 
     podman build "${PODMAN_BUILD_ARGS[@]}" .
 
+# Build an NVIDIA edition on top of an Elavo image (nvidia/Containerfile).
+#
+#   just build-nvidia open     elavo-nvidia-open: Turing and newer, open modules
+#   just build-nvidia legacy   elavo-nvidia-legacy: Maxwell, Pascal, Volta, driver 580
+#
+# base_image is the Elavo image to layer on: the published one by default,
+# or a local build such as localhost/elavo:latest. The NVIDIA modules are
+# chosen for the kernel in that image. Extra podman build options, such as
+# --jobs 1, can be passed in PODMAN_BUILD_OPTS.
+build-nvidia $edition="open" $base_image=("ghcr.io/" + repo_organization + "/" + image_name + ":" + default_tag) $tag=default_tag:
+    #!/usr/bin/env bash
+
+    set -euox pipefail
+
+    case "${edition}" in
+        open) akmods=nvidia-open ;;
+        legacy) akmods=nvidia-lts ;;
+        *) echo "edition is open or legacy, not ${edition}" >&2; exit 1 ;;
+    esac
+    target="{{ image_name }}-nvidia-${edition}"
+
+    # A registry image is pulled so the kernel read below is current; a
+    # local one must already exist.
+    if [[ "${base_image%%/*}" == *.* && "${base_image}" != localhost/* ]]; then
+        podman pull "${base_image}"
+    fi
+    kernel="$(podman run --rm --network=none --entrypoint rpm "${base_image}" \
+        -q kernel-core --queryformat '%{VERSION}-%{RELEASE}.%{ARCH}')"
+    fedora="${kernel##*.fc}"
+    fedora="${fedora%%.*}"
+
+    BUILD_ARGS=(
+        --build-arg "BASE_IMAGE=${base_image}"
+        --build-arg "FEDORA_VERSION=${fedora}"
+        --build-arg "KERNEL_VERSION=${kernel}"
+        --build-arg "AKMODS_NVIDIA=${akmods}"
+        --build-arg "NVIDIA_EDITION=${edition}"
+        --build-arg "NVIDIA_FILES_HASH=$(find nvidia -type f -print0 | sort -z | xargs -0 sha256sum | sha256sum | cut -d' ' -f1)"
+    )
+    LABELS=()
+    if REVISION="$(git rev-parse HEAD 2>/dev/null)" && [[ -n "${REVISION}" ]]; then
+        if [[ -n "$(git status -s)" ]]; then
+            REVISION="${REVISION}-dirty"
+        fi
+        LABELS+=("--label" "org.opencontainers.image.revision=${REVISION}")
+    fi
+    LABELS+=("--label" "org.opencontainers.image.base.name=${base_image}")
+    LABELS+=("--label" "org.opencontainers.image.created=$(date -u +%Y\-%m\-%d\T%H\:%M\:%S\Z)")
+    LABELS+=("--label" "org.opencontainers.image.description={{ image_desc }}, NVIDIA ${edition} edition")
+    LABELS+=("--label" "org.opencontainers.image.title=${target}")
+    LABELS+=("--label" "org.opencontainers.image.vendor={{ repo_organization }}")
+    LABELS+=("--label" "ostree.linux=${kernel}")
+
+    # shellcheck disable=SC2086
+    podman build ${PODMAN_BUILD_OPTS:-} "${BUILD_ARGS[@]}" "${LABELS[@]}" \
+        --tag "${target}:${tag}" --file nvidia/Containerfile .
+
 # Split the image for smaller updates (New)!
 rechunk $target_image=image_name $tag=default_tag:
     #!/usr/bin/env bash

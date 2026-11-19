@@ -1,0 +1,10 @@
+# Kernel arguments for the NVIDIA editions. bootc adds them when it
+# deploys this image and takes them out again on a switch back to the
+# base image, which does not ship this file.
+#
+# nouveau is kept out of the initramfs and the running system so it cannot
+# take the GPU before the nvidia module loads. nvidia-drm.modeset=1 gives
+# wlroots (labwc) the DRM/KMS device it needs; recent drivers default to
+# it, and setting it keeps that true on every branch.
+kargs = ["rd.driver.blacklist=nouveau", "modprobe.blacklist=nouveau", "nvidia-drm.modeset=1"]
+match-architectures = ["x86_64"]
