@@ -25,6 +25,11 @@ cp -avf "/ctx/system_files"/. /
 # Wi-Fi firmware (2015–2017 Intel Macs). The proprietary wl module is
 # installed further down and is not loaded.
 # Elavo Files is the file manager; Nautilus and Sushi are not installed.
+# Archive Utility's runtime tools are listed so it can create and extract
+# the formats it offers. zip, 7zip, zstd, and bubblewrap are already on
+# base-main today; they are listed so that stays true. unar opens RAR
+# archives that have a password; libunarr is loaded at runtime for RAR
+# archives that do not. lrzip is not packaged for Fedora 45.
 # localsearch indexes home for Files' search (org.freedesktop.LocalSearch3);
 # it used to arrive with Nautilus. glycin-thumbnailer and gst-thumbnailers
 # are the image, SVG, video, and audio thumbnailers Files and the desktop
@@ -49,6 +54,19 @@ dnf5 install -y \
     gvfs-mtp \
     gvfs-gphoto2 \
     bsdtar \
+    zip \
+    unzip \
+    7zip \
+    zstd \
+    lz4 \
+    brotli \
+    lzip \
+    xorriso \
+    cabextract \
+    innoextract \
+    unar \
+    libunarr \
+    bubblewrap \
     desktop-file-utils \
     xdg-desktop-portal \
     xdg-desktop-portal-gtk \
@@ -295,16 +313,72 @@ grep -q '^Exec=/usr/bin/elavo-files ' /usr/share/dbus-1/services/org.freedesktop
 test -f /etc/xdg/autostart/io.elavo.Files.LocalSend.desktop
 test ! -e /usr/share/applications/org.gnome.Nautilus.desktop
 test ! -e /usr/bin/sushi
+# Archive Utility (the archive-utility stage) compresses and extracts
+# archives. The session's defaults below give it the archive types; ISO
+# images and disk images stay unset, and folders stay with Files.
+# Its desktop file still lists ISO types, so it appears under Open With.
+cp -a /ctx/archive_utility_files/. /
+test -x /usr/bin/elavo-archive-utility
+test -f /usr/share/applications/io.elavo.ArchiveUtility.desktop
+test -f /usr/share/metainfo/io.elavo.ArchiveUtility.metainfo.xml
+test -s /usr/share/icons/hicolor/scalable/apps/io.elavo.ArchiveUtility.svg
+test -s /usr/share/icons/hicolor/symbolic/apps/io.elavo.ArchiveUtility-symbolic.svg
+test -s /usr/share/icons/hicolor/128x128/apps/io.elavo.ArchiveUtility.png
+test -s /usr/share/icons/hicolor/256x256/apps/io.elavo.ArchiveUtility.png
 # The session's own defaults (XDG_CURRENT_DESKTOP=elavo), ahead of the
-# distribution's: Files for folders.
+# distribution's: Files for folders, Archive Utility for archives.
+# ISO types (application/x-cd-image, application/x-iso9660-image, and
+# application/vnd.efi.iso) are intentionally omitted.
 cat > /usr/share/applications/elavo-mimeapps.list <<'MIMEAPPS'
 [Default Applications]
 inode/directory=io.elavo.Files.desktop;
+application/zip=io.elavo.ArchiveUtility.desktop;
+application/x-7z-compressed=io.elavo.ArchiveUtility.desktop;
+application/x-tar=io.elavo.ArchiveUtility.desktop;
+application/gzip=io.elavo.ArchiveUtility.desktop;
+application/x-gzip=io.elavo.ArchiveUtility.desktop;
+application/x-bzip2=io.elavo.ArchiveUtility.desktop;
+application/x-bzip=io.elavo.ArchiveUtility.desktop;
+application/x-xz=io.elavo.ArchiveUtility.desktop;
+application/zstd=io.elavo.ArchiveUtility.desktop;
+application/x-zstd=io.elavo.ArchiveUtility.desktop;
+application/vnd.rar=io.elavo.ArchiveUtility.desktop;
+application/x-rar=io.elavo.ArchiveUtility.desktop;
+application/x-rar-compressed=io.elavo.ArchiveUtility.desktop;
+application/x-compressed-tar=io.elavo.ArchiveUtility.desktop;
+application/x-bzip-compressed-tar=io.elavo.ArchiveUtility.desktop;
+application/x-xz-compressed-tar=io.elavo.ArchiveUtility.desktop;
+application/x-zstd-compressed-tar=io.elavo.ArchiveUtility.desktop;
+application/x-lzip=io.elavo.ArchiveUtility.desktop;
+application/x-lz4=io.elavo.ArchiveUtility.desktop;
+application/x-brotli=io.elavo.ArchiveUtility.desktop;
+application/x-lrzip=io.elavo.ArchiveUtility.desktop;
+application/x-snappy-framed=io.elavo.ArchiveUtility.desktop;
+application/vnd.ms-cab-compressed=io.elavo.ArchiveUtility.desktop;
+application/x-cpio=io.elavo.ArchiveUtility.desktop;
+application/x-archive=io.elavo.ArchiveUtility.desktop;
+application/x-xar=io.elavo.ArchiveUtility.desktop;
+application/x-lzh-compressed=io.elavo.ArchiveUtility.desktop;
+application/x-arj=io.elavo.ArchiveUtility.desktop;
 MIMEAPPS
+if grep -qE '^application/(x-iso9660-image|x-cd-image|vnd.efi.iso)=' /usr/share/applications/elavo-mimeapps.list; then
+    echo "ISO images must not have a session default" >&2
+    exit 1
+fi
 command -v openssl >/dev/null
 command -v zip >/dev/null
 command -v 7z >/dev/null
 command -v bsdtar >/dev/null
+command -v unar >/dev/null
+command -v xorriso >/dev/null
+command -v lz4 >/dev/null
+command -v brotli >/dev/null
+command -v lzip >/dev/null
+command -v cabextract >/dev/null
+command -v innoextract >/dev/null
+command -v bwrap >/dev/null
+command -v zstd >/dev/null
+test -e /usr/lib64/libunarr.so.1
 test -f /usr/share/gvfs/mounts/smb.mount
 test -f /usr/share/gvfs/mounts/afc.mount
 command -v localsearch >/dev/null
@@ -323,6 +397,9 @@ grep -q '^application/vnd.flatpak.ref=.*io.elavo.Applications.desktop' /usr/shar
 grep -q '^application/vnd.flatpak=.*io.elavo.Applications.desktop' /usr/share/applications/mimeinfo.cache
 grep -q '^application/vnd.appimage=.*io.elavo.Applications.desktop' /usr/share/applications/mimeinfo.cache
 grep -q '^inode/directory=.*io.elavo.Files.desktop' /usr/share/applications/mimeinfo.cache
+grep -q '^application/zip=.*io.elavo.ArchiveUtility.desktop' /usr/share/applications/mimeinfo.cache
+grep -q '^application/x-7z-compressed=.*io.elavo.ArchiveUtility.desktop' /usr/share/applications/mimeinfo.cache
+grep -q '^application/vnd.rar=.*io.elavo.ArchiveUtility.desktop' /usr/share/applications/mimeinfo.cache
 systemctl --global enable elavo-applications.service
 systemctl enable elavo-applications-system.service elavo-applications-system.path
 
@@ -541,7 +618,7 @@ test ! -e /etc/systemd/system/timers.target.wants/rpm-ostreed-automatic.timer
 osrel=/usr/lib/os-release
 test -f "${osrel}"
 test -L /etc/os-release
-elavo_version=0.3.4.0
+elavo_version=0.3.4.1
 version_id=$(sed -n 's/^VERSION_ID=//p' "${osrel}" | tr -d "\"'")
 [[ "${version_id}" =~ ^[0-9]+$ ]]
 kept_version_id=$(sed -n 's/^VERSION_ID=//p' "${osrel}")

@@ -77,6 +77,18 @@ RUN git clone --depth 1 --branch "${ELAVO_FILES_REF}" \
 WORKDIR /src
 RUN cargo build --release --locked && DESTDIR=/out scripts/install
 
+# Archive Utility (elavo-archive-utility): compress and extract archives.
+# Built at a pinned tag, like Files. It is the default handler for archive
+# formats; ISO images are left without a session default (see build.sh).
+FROM registry.fedoraproject.org/fedora:${FEDORA_VERSION} AS archive-utility
+ARG ELAVO_ARCHIVE_UTILITY_REF=v0.1.0
+RUN dnf5 install -y git gcc pkgconf-pkg-config rust cargo gtk4-devel && \
+    dnf5 clean all
+RUN git clone --depth 1 --branch "${ELAVO_ARCHIVE_UTILITY_REF}" \
+        https://github.com/elavo-io/elavo-archive-utility.git /src
+WORKDIR /src
+RUN cargo build --release --locked && DESTDIR=/out scripts/install
+
 # labwc with the mods layer, built at a pinned revision of elavo-labwc-mods.
 # main until the first tag; pin a tag the way Folio is pinned after that.
 # The stage clones elavo-labwc at the commit in that repo's LABWC_REF.
@@ -113,6 +125,7 @@ COPY --from=system-settings /out /system_settings_files
 COPY --from=app-bay /out /app_bay_files
 COPY --from=applications /out /applications_files
 COPY --from=files /out /files_files
+COPY --from=archive-utility /out /archive_utility_files
 COPY --from=labwc /out /labwc_files
 
 # Base Image
