@@ -69,7 +69,7 @@ RUN cargo build --release --locked && make -C nautilus && DESTDIR=/out scripts/i
 # D-Bus services for io.elavo.Files and org.freedesktop.FileManager1, and the
 # LocalSend receiver's autostart entry. Built at a pinned tag, like Folio.
 FROM registry.fedoraproject.org/fedora:${FEDORA_VERSION} AS files
-ARG ELAVO_FILES_REF=v0.1.3
+ARG ELAVO_FILES_REF=v0.1.4
 RUN dnf5 install -y git gcc pkgconf-pkg-config rust cargo gtk4-devel && \
     dnf5 clean all
 RUN git clone --depth 1 --branch "${ELAVO_FILES_REF}" \
