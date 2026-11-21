@@ -141,7 +141,7 @@ test -f /usr/lib/bootc/kargs.d/00-elavo-nvidia.toml
 osrel=/usr/lib/os-release
 sed -i '/^VARIANT=/d; /^VARIANT_ID=/d' "${osrel}"
 case "${ELAVO_NVIDIA_EDITION}" in
-    open) variant="NVIDIA" ;;
+    open) variant="NVIDIA Open" ;;
     legacy) variant="NVIDIA Legacy" ;;
 esac
 printf 'VARIANT="%s"\nVARIANT_ID=nvidia-%s\n' "${variant}" "${ELAVO_NVIDIA_EDITION}" >> "${osrel}"

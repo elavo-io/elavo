@@ -668,6 +668,11 @@ test "$(sed -n 's/^ID=//p' "${osrel}")" = "${kept_id}"
 grep -q "^PRETTY_NAME=\"Elavo ${elavo_version}\"\$" "${osrel}"
 grep -q '^NAME="Elavo"$' "${osrel}"
 grep -q "^VERSION=\"${elavo_version}\"\$" "${osrel}"
+# The base image has no edition. NVIDIA builds add VARIANT and
+# VARIANT_ID in nvidia/install-nvidia.sh after this.
+sed -i '/^VARIANT=/d; /^VARIANT_ID=/d' "${osrel}"
+! grep -q '^VARIANT=' "${osrel}"
+! grep -q '^VARIANT_ID=' "${osrel}"
 test -L /etc/os-release
 
 test -f /usr/lib/fedora-release
