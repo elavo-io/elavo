@@ -223,7 +223,7 @@ class Agent:
         invocation.return_dbus_error("org.freedesktop.DBus.Error.UnknownMethod", method)
 
 
-def on_objects_added(conn, _sender, _path, _iface, _signal, params):
+def on_objects_added(conn, _sender, _path, _iface, _signal, params, _user_data=None):
     path, ifaces = params.unpack()
     if DEVICE in ifaces and as_bool(ifaces[DEVICE].get("Paired", False)):
         set_property(conn, path, DEVICE, "Trusted", GLib.Variant("b", True))
@@ -231,7 +231,7 @@ def on_objects_added(conn, _sender, _path, _iface, _signal, params):
         set_property(conn, path, ADAPTER, "Powered", GLib.Variant("b", True))
 
 
-def on_properties_changed(conn, _sender, path, _iface, _signal, params):
+def on_properties_changed(conn, _sender, path, _iface, _signal, params, _user_data=None):
     iface, changed, _invalidated = params.unpack()
     if iface == DEVICE and as_bool(changed.get("Paired", False)):
         set_property(conn, path, DEVICE, "Trusted", GLib.Variant("b", True))
