@@ -69,7 +69,7 @@ RUN cargo build --release --locked && make -C nautilus && DESTDIR=/out scripts/i
 # D-Bus services for io.elavo.Files and org.freedesktop.FileManager1, and the
 # LocalSend receiver's autostart entry. Built at a pinned tag, like Folio.
 FROM registry.fedoraproject.org/fedora:${FEDORA_VERSION} AS files
-ARG ELAVO_FILES_REF=v0.1.4
+ARG ELAVO_FILES_REF=v0.1.5
 RUN dnf5 install -y git gcc pkgconf-pkg-config rust cargo gtk4-devel && \
     dnf5 clean all
 RUN git clone --depth 1 --branch "${ELAVO_FILES_REF}" \
@@ -86,6 +86,21 @@ RUN dnf5 install -y git gcc pkgconf-pkg-config rust cargo gtk4-devel && \
     dnf5 clean all
 RUN git clone --depth 1 --branch "${ELAVO_ARCHIVE_UTILITY_REF}" \
         https://github.com/elavo-io/elavo-archive-utility.git /src
+WORKDIR /src
+RUN cargo build --release --locked && DESTDIR=/out scripts/install
+
+# Music (elavo-music): the music library and player, shown as Music. Built at
+# a pinned tag, like Files. Playback is GStreamer's playbin3 (the playback
+# feature, on by default), so the build needs the GStreamer development files
+# and the SQLite headers; the plugins it plays through are installed in
+# build.sh.
+FROM registry.fedoraproject.org/fedora:${FEDORA_VERSION} AS music
+ARG ELAVO_MUSIC_REF=v0.1.0
+RUN dnf5 install -y git gcc pkgconf-pkg-config rust cargo gtk4-devel \
+        gstreamer1-devel gstreamer1-plugins-base-devel sqlite-devel && \
+    dnf5 clean all
+RUN git clone --depth 1 --branch "${ELAVO_MUSIC_REF}" \
+        https://github.com/elavo-io/elavo-music.git /src
 WORKDIR /src
 RUN cargo build --release --locked && DESTDIR=/out scripts/install
 
@@ -126,6 +141,7 @@ COPY --from=app-bay /out /app_bay_files
 COPY --from=applications /out /applications_files
 COPY --from=files /out /files_files
 COPY --from=archive-utility /out /archive_utility_files
+COPY --from=music /out /music_files
 COPY --from=labwc /out /labwc_files
 
 # Base Image

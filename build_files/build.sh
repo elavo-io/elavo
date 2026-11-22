@@ -30,6 +30,11 @@ cp -avf "/ctx/system_files"/. /
 # base-main today; they are listed so that stays true. unar opens RAR
 # archives that have a password; libunarr is loaded at runtime for RAR
 # archives that do not. lrzip is not packaged for Fedora 45.
+# Music plays through GStreamer's playbin3. gstreamer1-plugins-base has
+# playbin3, gstreamer1-plugins-good has the MP4 demuxer and the tag readers,
+# and gstreamer1-plugin-libav decodes AAC and Apple Lossless. All three are
+# on base-main today (libav only as a weak dependency); they are listed so
+# that stays true. FLAC is in the base plugins.
 # localsearch indexes home for Files' search (org.freedesktop.LocalSearch3);
 # it used to arrive with Nautilus. glycin-thumbnailer and gst-thumbnailers
 # are the image, SVG, video, and audio thumbnailers Files and the desktop
@@ -67,6 +72,9 @@ dnf5 install -y \
     unar \
     libunarr \
     bubblewrap \
+    gstreamer1-plugins-base \
+    gstreamer1-plugins-good \
+    gstreamer1-plugin-libav \
     desktop-file-utils \
     xdg-desktop-portal \
     xdg-desktop-portal-gtk \
@@ -379,6 +387,25 @@ command -v innoextract >/dev/null
 command -v bwrap >/dev/null
 command -v zstd >/dev/null
 test -e /usr/lib64/libunarr.so.1
+# Music (the music stage) is the music library and player. It is shown as
+# Music in the launcher. Its desktop file declares X-Elavo-DefaultAccent for
+# the Automatic accent. No file type is made Music's default here. The
+# plugin checks are the formats it plays: AAC and Apple Lossless need
+# gstreamer1-plugin-libav, MP4 and ID3 need the good plugins.
+cp -a /ctx/music_files/. /
+test -x /usr/bin/elavo-music
+test -f /usr/share/applications/io.elavo.Music.desktop
+grep -q '^Name=Music$' /usr/share/applications/io.elavo.Music.desktop
+grep -q '^X-Elavo-DefaultAccent=' /usr/share/applications/io.elavo.Music.desktop
+test -f /usr/share/metainfo/io.elavo.Music.metainfo.xml
+test -s /usr/share/icons/hicolor/scalable/apps/io.elavo.Music.svg
+rpm -q gstreamer1-plugin-libav >/dev/null
+gst-inspect-1.0 playbin3 >/dev/null
+gst-inspect-1.0 qtdemux >/dev/null
+gst-inspect-1.0 id3demux >/dev/null
+gst-inspect-1.0 flacdec >/dev/null
+gst-inspect-1.0 avdec_aac >/dev/null
+gst-inspect-1.0 avdec_alac >/dev/null
 test -f /usr/share/gvfs/mounts/smb.mount
 test -f /usr/share/gvfs/mounts/afc.mount
 command -v localsearch >/dev/null
@@ -618,7 +645,7 @@ test ! -e /etc/systemd/system/timers.target.wants/rpm-ostreed-automatic.timer
 osrel=/usr/lib/os-release
 test -f "${osrel}"
 test -L /etc/os-release
-elavo_version=0.3.4.2
+elavo_version=0.3.4.3
 version_id=$(sed -n 's/^VERSION_ID=//p' "${osrel}" | tr -d "\"'")
 [[ "${version_id}" =~ ^[0-9]+$ ]]
 kept_version_id=$(sed -n 's/^VERSION_ID=//p' "${osrel}")
