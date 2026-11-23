@@ -398,7 +398,7 @@ test -f /usr/share/applications/io.elavo.Music.desktop
 grep -q '^Name=Music$' /usr/share/applications/io.elavo.Music.desktop
 grep -q '^X-Elavo-DefaultAccent=' /usr/share/applications/io.elavo.Music.desktop
 test -f /usr/share/metainfo/io.elavo.Music.metainfo.xml
-test -s /usr/share/icons/hicolor/scalable/apps/io.elavo.Music.svg
+test -s /usr/share/icons/hicolor/256x256/apps/io.elavo.Music.png
 rpm -q gstreamer1-plugin-libav >/dev/null
 gst-inspect-1.0 playbin3 >/dev/null
 gst-inspect-1.0 qtdemux >/dev/null
