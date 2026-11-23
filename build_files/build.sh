@@ -443,7 +443,7 @@ test -f /usr/lib/firewalld/zones/FedoraWorkstation.xml
 # bars, and Firefox's window buttons. The icon theme carries the panel's sun
 # and Elavo's app icons, and inherits Adwaita for everything else. The stamp
 # tells elavo-user-theme which build each account's copy came from.
-visuals_theme_rev=23ed8c310a4e6b352ff52c981439124e84ad3974
+visuals_theme_rev=bd00f9d4c7c67ef195edd47bfcbd89e65d2e37b2
 theme_tmp=$(mktemp -d)
 curl -fsSL -o "${theme_tmp}/visuals.tar.gz" \
     "https://github.com/elavo-io/elavo-visuals/archive/${visuals_theme_rev}.tar.gz"
@@ -645,7 +645,7 @@ test ! -e /etc/systemd/system/timers.target.wants/rpm-ostreed-automatic.timer
 osrel=/usr/lib/os-release
 test -f "${osrel}"
 test -L /etc/os-release
-elavo_version=0.3.4.3
+elavo_version=0.3.4.4
 version_id=$(sed -n 's/^VERSION_ID=//p' "${osrel}" | tr -d "\"'")
 [[ "${version_id}" =~ ^[0-9]+$ ]]
 kept_version_id=$(sed -n 's/^VERSION_ID=//p' "${osrel}")

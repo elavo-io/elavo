@@ -69,7 +69,7 @@ RUN cargo build --release --locked && make -C nautilus && DESTDIR=/out scripts/i
 # D-Bus services for io.elavo.Files and org.freedesktop.FileManager1, and the
 # LocalSend receiver's autostart entry. Built at a pinned tag, like Folio.
 FROM registry.fedoraproject.org/fedora:${FEDORA_VERSION} AS files
-ARG ELAVO_FILES_REF=v0.1.5
+ARG ELAVO_FILES_REF=v0.1.6
 RUN dnf5 install -y git gcc pkgconf-pkg-config rust cargo gtk4-devel && \
     dnf5 clean all
 RUN git clone --depth 1 --branch "${ELAVO_FILES_REF}" \
@@ -81,7 +81,7 @@ RUN cargo build --release --locked && DESTDIR=/out scripts/install
 # Built at a pinned tag, like Files. It is the default handler for archive
 # formats; ISO images are left without a session default (see build.sh).
 FROM registry.fedoraproject.org/fedora:${FEDORA_VERSION} AS archive-utility
-ARG ELAVO_ARCHIVE_UTILITY_REF=v0.1.0
+ARG ELAVO_ARCHIVE_UTILITY_REF=v0.1.1
 RUN dnf5 install -y git gcc pkgconf-pkg-config rust cargo gtk4-devel && \
     dnf5 clean all
 RUN git clone --depth 1 --branch "${ELAVO_ARCHIVE_UTILITY_REF}" \
@@ -95,7 +95,7 @@ RUN cargo build --release --locked && DESTDIR=/out scripts/install
 # and the SQLite headers; the plugins it plays through are installed in
 # build.sh.
 FROM registry.fedoraproject.org/fedora:${FEDORA_VERSION} AS music
-ARG ELAVO_MUSIC_REF=v0.1.0
+ARG ELAVO_MUSIC_REF=v0.1.1
 RUN dnf5 install -y git gcc pkgconf-pkg-config rust cargo gtk4-devel \
         gstreamer1-devel gstreamer1-plugins-base-devel sqlite-devel && \
     dnf5 clean all
