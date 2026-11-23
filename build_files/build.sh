@@ -428,7 +428,8 @@ grep -q '^application/zip=.*io.elavo.ArchiveUtility.desktop' /usr/share/applicat
 grep -q '^application/x-7z-compressed=.*io.elavo.ArchiveUtility.desktop' /usr/share/applications/mimeinfo.cache
 grep -q '^application/vnd.rar=.*io.elavo.ArchiveUtility.desktop' /usr/share/applications/mimeinfo.cache
 systemctl --global enable elavo-applications.service
-systemctl enable elavo-applications-system.service elavo-applications-system.path
+test -f /usr/lib/systemd/system/elavo-applications-system.timer
+systemctl enable elavo-applications-system.service elavo-applications-system.path elavo-applications-system.timer
 
 # The firewall as Fedora Workstation sets it: the FedoraWorkstation zone
 # accepts inbound ports 1025-65535 and rejects the rest. AirPlay receivers
