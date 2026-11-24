@@ -1,0 +1,7 @@
+// Written by elavo-directory from /etc/elavo/directory.conf. Do not edit;
+// change AdminGroup= there and run elavo-directory apply.
+// Members of the directory's administrator groups answer administrator
+// password prompts with their own password, as wheel members do.
+polkit.addAdminRule(function(action, subject) {
+    return ["unix-group:wheel"@ADMIN_GROUPS@];
+});

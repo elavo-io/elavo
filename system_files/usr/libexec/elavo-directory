@@ -1,0 +1,268 @@
+#!/bin/bash
+# Keeps this computer's settings in step with its directory join (Active
+# Directory or FreeIPA, joined with realm). Settings come from
+# /etc/elavo/directory.conf.
+#
+#   elavo-directory sync     apply when joined; undo when it was applied and
+#                            the computer has left (elavo-directory.path)
+#   elavo-directory apply    apply now (after editing directory.conf)
+#   elavo-directory revert   undo everything apply did
+#   elavo-directory status   what is joined and applied
+#
+# apply:
+#   - sssd drop-in: short names and /home/<name> (ShortNames=true)
+#   - authselect: sssd with with-mkhomedir, with-mdns4, with-silent-lastlog,
+#     keeping the features realm chose (FreeIPA adds with-sudo); oddjobd on
+#   - AdminGroup= groups: a sudoers drop-in, a polkit admin rule, and an
+#     ACL on /var/Applications like wheel's
+# revert removes those, takes the ACLs back off, and restores LocalProfile=.
+#
+# FreeIPA checks the PAM service name against HBAC. The HBAC rule for this
+# computer must allow greetd (login), elavo-lock (unlock), elavo-passwd
+# (expired password at login), polkit-1 (administrator prompts), and sudo;
+# that is set on the server.
+set -euo pipefail
+# Group names go into replacements literally, "&" included.
+shopt -u patsub_replacement 2>/dev/null || true
+
+CONF=${ELAVO_DIRECTORY_CONF:-/etc/elavo/directory.conf}
+SSSD_CONF=/etc/sssd/sssd.conf
+KEYTAB=/etc/krb5.keytab
+SSSD_DROPIN=/etc/sssd/conf.d/50-elavo.conf
+SUDOERS=/etc/sudoers.d/50-elavo-directory-admins
+POLKIT_RULE=/etc/polkit-1/rules.d/40-elavo-directory-admins.rules
+TEMPLATES=${ELAVO_DIRECTORY_TEMPLATES:-/usr/share/elavo/directory}
+APPS=/var/Applications
+STATE=/var/lib/elavo/directory
+# "gid<TAB>name" for each administrator group apply resolved.
+ADMINS="${STATE}/admin-groups"
+FEATURES=(with-mkhomedir with-mdns4 with-silent-lastlog)
+
+log() { echo "elavo-directory: $*" >&2; }
+
+# The values of KEY in directory.conf, one per line, trimmed.
+conf_values() {
+    [[ -r "${CONF}" ]] || return 0
+    sed -n "s/^[[:space:]]*$1[[:space:]]*=[[:space:]]*//p" "${CONF}" |
+        sed 's/[[:space:]]*$//' | grep -v '^$' || true
+}
+
+conf_value() {
+    local value
+    value=$(conf_values "$1" | tail -n 1)
+    echo "${value:-$2}"
+}
+
+# The domains in sssd.conf's [sssd] section, one per line.
+domains() {
+    [[ -r "${SSSD_CONF}" ]] || return 0
+    awk -F= '
+        /^[[:space:]]*\[/ { in_sssd = ($0 ~ /^[[:space:]]*\[sssd\]/) }
+        in_sssd && $1 ~ /^[[:space:]]*domains[[:space:]]*$/ {
+            n = split($2, list, ",")
+            for (i = 1; i <= n; i++) {
+                gsub(/^[[:space:]]+|[[:space:]]+$/, "", list[i])
+                if (list[i] != "") print list[i]
+            }
+        }' "${SSSD_CONF}"
+}
+
+joined() {
+    [[ -s "${KEYTAB}" ]] && [[ -n "$(domains)" ]]
+}
+
+write_file() { # path mode [group], contents on stdin
+    local path=$1 mode=$2 group=${3:-root} tmp
+    tmp=$(mktemp "${path}.XXXXXX")
+    cat > "${tmp}"
+    chmod "${mode}" "${tmp}"
+    chown "root:${group}" "${tmp}"
+    mv -f "${tmp}" "${path}"
+    restorecon "${path}" 2>/dev/null || true
+}
+
+apply_sssd() {
+    if [[ "$(conf_value ShortNames true)" != true ]]; then
+        rm -f "${SSSD_DROPIN}"
+        return
+    fi
+    # sssd runs as its own user and reads its configuration through group
+    # sssd, as sssd.conf does.
+    local group=root
+    getent group sssd >/dev/null && group=sssd
+    [[ -d "$(dirname "${SSSD_DROPIN}")" ]] ||
+        install -d -m 750 -g "${group}" "$(dirname "${SSSD_DROPIN}")"
+    {
+        echo "# Written by elavo-directory from ${CONF}. Do not edit."
+        echo "# Short names and /home/<name>, overriding what realm wrote."
+        local domain
+        while read -r domain; do
+            echo
+            echo "[domain/${domain}]"
+            echo "use_fully_qualified_names = False"
+            echo "fallback_homedir = /home/%u"
+        done < <(domains)
+    } | write_file "${SSSD_DROPIN}" 640 "${group}"
+    if command -v sssctl >/dev/null && ! sssctl config-check >/dev/null 2>&1; then
+        log "sssctl config-check failed:"
+        sssctl config-check >&2 || true
+    fi
+}
+
+apply_authselect() {
+    local current profile features=()
+    current=$(authselect current --raw 2>/dev/null || true)
+    profile=${current%% *}
+    if [[ "${current}" == *" "* ]]; then
+        read -r -a features <<<"${current#* }"
+    fi
+    if [[ "${profile}" != sssd ]]; then
+        features=()
+    fi
+    local feature
+    for feature in "${FEATURES[@]}"; do
+        [[ " ${features[*]} " == *" ${feature} "* ]] || features+=("${feature}")
+    done
+    authselect select sssd "${features[@]}" --force >/dev/null
+    systemctl enable --now oddjobd.service >/dev/null 2>&1 || log "could not start oddjobd"
+}
+
+# The line the last apply wrote for GROUP, matched without case.
+last_found() {
+    awk -F '\t' -v group="$1" 'tolower($2) == tolower(group) { print; exit }' "${ADMINS}"
+}
+
+# Resolves AdminGroup= to "gid<TAB>name". A group sssd cannot look up yet
+# (offline at boot) keeps what the last apply found.
+resolve_admins() {
+    local group entry gid name
+    while read -r group; do
+        if entry=$(getent group "${group}"); then
+            name=${entry%%:*}
+            gid=$(cut -d: -f3 <<<"${entry}")
+            printf '%s\t%s\n' "${gid}" "${name}"
+        elif [[ -r "${ADMINS}" ]] && entry=$(last_found "${group}") && [[ -n "${entry}" ]]; then
+            echo "${entry}"
+            log "group \"${group}\" not found now; keeping the last one found"
+        else
+            log "group \"${group}\" not found"
+        fi
+    done < <(conf_values AdminGroup)
+}
+
+acl_add() {
+    local gid=$1
+    [[ -d "${APPS}" ]] || return 0
+    setfacl -R -m "g:${gid}:rwX,d:g:${gid}:rwX" "${APPS}"
+}
+
+acl_remove() {
+    local gid=$1
+    [[ -d "${APPS}" ]] || return 0
+    setfacl -R -x "g:${gid},d:g:${gid}" "${APPS}" 2>/dev/null || true
+}
+
+# The admin groups in a JavaScript string, escaped.
+js_string() {
+    local s=${1//\\/\\\\}
+    s=${s//\"/\\\"}
+    printf '"unix-group:%s"' "${s}"
+}
+
+apply_admins() {
+    local resolved gid name sudo_lines="" js_groups=""
+    resolved=$(resolve_admins | sort -u -t$'\t' -k1,1)
+    # ACLs for groups dropped from the list come off.
+    if [[ -r "${ADMINS}" ]]; then
+        while IFS=$'\t' read -r gid name; do
+            [[ -n "${gid}" ]] || continue
+            cut -f1 <<<"${resolved}" | grep -qx -- "${gid}" || acl_remove "${gid}"
+        done < "${ADMINS}"
+    fi
+    if [[ -z "${resolved}" ]]; then
+        rm -f "${SUDOERS}" "${POLKIT_RULE}" "${ADMINS}"
+        return
+    fi
+    while IFS=$'\t' read -r gid name; do
+        sudo_lines+="# ${name}"$'\n'"%#${gid} ALL=(ALL:ALL) ALL"$'\n'
+        js_groups+=", $(js_string "${name}")"
+        acl_add "${gid}"
+    done <<<"${resolved}"
+    local sudoers rule
+    sudoers=$(<"${TEMPLATES}/sudoers.in")
+    sudoers=${sudoers//@ADMIN_LINES@/${sudo_lines%$'\n'}}
+    if visudo -cqf - <<<"${sudoers}" >/dev/null; then
+        write_file "${SUDOERS}" 440 <<<"${sudoers}"
+    else
+        log "the sudoers drop-in did not pass visudo; not installed"
+    fi
+    rule=$(<"${TEMPLATES}/polkit.rules.in")
+    write_file "${POLKIT_RULE}" 644 <<<"${rule//@ADMIN_GROUPS@/${js_groups}}"
+    printf '%s\n' "${resolved}" | write_file "${ADMINS}" 644
+}
+
+apply() {
+    joined || { log "not joined to a directory"; return 1; }
+    install -d -m 755 "${STATE}"
+    apply_sssd
+    apply_authselect
+    systemctl try-restart sssd.service
+    sss_cache -E 2>/dev/null || true
+    apply_admins
+    touch "${STATE}/applied"
+    log "applied for $(domains | paste -sd, -)"
+}
+
+revert() {
+    local gid name profile
+    if [[ -r "${ADMINS}" ]]; then
+        while IFS=$'\t' read -r gid name; do
+            [[ -n "${gid}" ]] && acl_remove "${gid}"
+        done < "${ADMINS}"
+    fi
+    rm -f "${SSSD_DROPIN}" "${SUDOERS}" "${POLKIT_RULE}"
+    if ! joined && [[ "$(authselect current --raw 2>/dev/null)" == sssd* ]]; then
+        profile=$(conf_value LocalProfile "local with-silent-lastlog with-mdns4")
+        # shellcheck disable=SC2086 # the profile and its features
+        authselect select ${profile} --force >/dev/null
+    fi
+    rm -rf "${STATE}"
+    log "reverted"
+}
+
+# The sssd profile with no domain left in sssd.conf: what realm leave
+# leaves behind, even when apply never ran.
+left_behind() {
+    [[ "$(authselect current --raw 2>/dev/null)" == sssd* ]] && [[ -z "$(domains)" ]]
+}
+
+sync() {
+    if joined; then
+        apply
+    elif [[ -e "${STATE}/applied" ]] || left_behind; then
+        revert
+    fi
+}
+
+status() {
+    if joined; then
+        echo "joined: $(domains | paste -sd, -)"
+    else
+        echo "joined: no"
+    fi
+    echo "authselect: $(authselect current --raw 2>/dev/null || echo none)"
+    [[ -e "${STATE}/applied" ]] && echo "applied: yes" || echo "applied: no"
+    if [[ -r "${ADMINS}" ]]; then
+        echo "administrator groups:"
+        sed 's/^/  /' "${ADMINS}"
+    fi
+}
+
+[[ $(id -u) -eq 0 ]] || { log "run as root"; exit 1; }
+case "${1:-}" in
+    sync) sync ;;
+    apply) apply ;;
+    revert) revert ;;
+    status) status ;;
+    *) sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2 ;;
+esac

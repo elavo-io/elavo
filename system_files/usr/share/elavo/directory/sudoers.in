@@ -1,0 +1,5 @@
+# Written by elavo-directory from /etc/elavo/directory.conf. Do not edit;
+# change AdminGroup= there and run elavo-directory apply.
+# Members of the directory's administrator groups may use sudo, as wheel
+# does. Groups are named by GID so names with spaces and case work.
+@ADMIN_LINES@

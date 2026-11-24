@@ -230,12 +230,62 @@ test -x /usr/libexec/elavo-greeter-publish
 test -f /usr/share/polkit-1/actions/io.elavo.greeter.policy
 test -f /usr/lib/tmpfiles.d/elavo-greeter.conf
 test -f /etc/pam.d/elavo-lock
+test -f /etc/pam.d/elavo-passwd
+grep -q 'password-auth' /etc/pam.d/elavo-lock
 grep -q 'elavo-greeter' /etc/greetd/config.toml
 # Closing the lid soon after waking must still suspend and lock.
 grep -q '^HoldoffTimeoutSec=5$' /usr/lib/systemd/logind.conf.d/40-elavo-lid-holdoff.conf
 # The greeter sets cage's output scale on 4K panels with wlr-randr.
 command -v wlr-randr >/dev/null
 getent passwd greetd >/dev/null
+
+# Directory accounts: Active Directory and FreeIPA, joined with
+# `realm join` (realmd, authselect, oddjob, and sssd-common are on base-main
+# today). sssd signs directory people in and caches them, so they can sign
+# in offline after the first time. adcli joins Active Directory and
+# freeipa-client joins FreeIPA; samba-common-tools is realm's AD helper;
+# krb5-workstation has kinit and klist; sssd-kcm keeps Kerberos tickets;
+# sssd-tools has sssctl; oddjob-mkhomedir makes a home at first sign-in.
+# The greeter's lock and password-change PAM files use password-auth, so
+# they work for directory accounts too. elavo-directory.path runs
+# /usr/libexec/elavo-directory when the join changes: it applies
+# /etc/elavo/directory.conf after a join (short names, /home/<name>,
+# authselect features, administrator groups for sudo, polkit and
+# /var/Applications) and undoes it after a leave. No group is named in the
+# image; each computer's directory.conf names its own.
+dnf5 install -y \
+    sssd \
+    sssd-ad \
+    sssd-ipa \
+    sssd-krb5 \
+    sssd-tools \
+    sssd-kcm \
+    adcli \
+    freeipa-client \
+    krb5-workstation \
+    oddjob \
+    oddjob-mkhomedir \
+    samba-common-tools
+command -v realm >/dev/null
+command -v adcli >/dev/null
+command -v ipa-client-install >/dev/null
+command -v sssctl >/dev/null
+command -v kinit >/dev/null
+command -v setfacl >/dev/null
+test -f /usr/lib64/security/pam_sss.so
+test -f /usr/lib64/security/pam_oddjob_mkhomedir.so
+test -d /usr/share/authselect/default/sssd
+chmod 755 /usr/libexec/elavo-directory
+bash -n /usr/libexec/elavo-directory
+test -f /etc/elavo/directory.conf
+if grep -q '^AdminGroup=.' /etc/elavo/directory.conf; then
+    echo "the image must not name an administrator group" >&2
+    exit 1
+fi
+test -f /usr/share/elavo/directory/sudoers.in
+test -f /usr/share/elavo/directory/polkit.rules.in
+systemctl enable elavo-directory.path elavo-directory.service
+test -L /etc/systemd/system/multi-user.target.wants/elavo-directory.path
 
 # System Settings (the system-settings stage). The panel's System Settings…
 # item and the dock's Dock Settings… open it. Its helper runs updates and
@@ -646,7 +696,7 @@ test ! -e /etc/systemd/system/timers.target.wants/rpm-ostreed-automatic.timer
 osrel=/usr/lib/os-release
 test -f "${osrel}"
 test -L /etc/os-release
-elavo_version=0.3.4.4
+elavo_version=0.3.4.5
 version_id=$(sed -n 's/^VERSION_ID=//p' "${osrel}" | tr -d "\"'")
 [[ "${version_id}" =~ ^[0-9]+$ ]]
 kept_version_id=$(sed -n 's/^VERSION_ID=//p' "${osrel}")

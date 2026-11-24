@@ -1,0 +1,15 @@
+[Unit]
+Description=Apply Elavo's directory settings after a join, undo them after a leave
+Documentation=file:///etc/elavo/directory.conf
+After=sssd.service
+# realm join rewrites the keytab and sssd.conf several times in a second.
+# The wait below folds those into one run; no start limit, so none is lost.
+StartLimitIntervalSec=0
+
+[Service]
+Type=oneshot
+ExecStartPre=/usr/bin/sleep 3
+ExecStart=/usr/libexec/elavo-directory sync
+
+[Install]
+WantedBy=multi-user.target

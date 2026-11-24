@@ -1,0 +1,11 @@
+[Unit]
+Description=Watch for directory joins and leaves
+
+[Path]
+# realm join and leave rewrite sssd.conf; the keytab comes and goes with
+# the computer account.
+PathChanged=/etc/sssd/sssd.conf
+PathChanged=/etc/krb5.keytab
+
+[Install]
+WantedBy=multi-user.target
