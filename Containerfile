@@ -6,7 +6,7 @@ ARG FEDORA_VERSION=45
 # Folio (the panel, the dock, Lens, and the app switcher), built at a pinned
 # tag, on the same Fedora release as the base image.
 FROM registry.fedoraproject.org/fedora:${FEDORA_VERSION} AS folio
-ARG ELAVO_FOLIO_REF=v0.3.6.2
+ARG ELAVO_FOLIO_REF=v0.3.6.3
 RUN dnf5 install -y git gcc pkgconf-pkg-config rust cargo \
         gtk4-devel gtk4-layer-shell-devel wayland-devel && \
     dnf5 clean all
@@ -95,7 +95,7 @@ RUN cargo build --release --locked && DESTDIR=/out scripts/install
 # and the SQLite headers; the plugins it plays through are installed in
 # build.sh.
 FROM registry.fedoraproject.org/fedora:${FEDORA_VERSION} AS music
-ARG ELAVO_MUSIC_REF=v0.1.2
+ARG ELAVO_MUSIC_REF=v0.1.3
 RUN dnf5 install -y git gcc pkgconf-pkg-config rust cargo gtk4-devel \
         gstreamer1-devel gstreamer1-plugins-base-devel sqlite-devel && \
     dnf5 clean all
