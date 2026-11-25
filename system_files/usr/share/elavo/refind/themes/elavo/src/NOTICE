@@ -1,0 +1,11 @@
+Tool and recovery icons in the Elavo rEFInd theme are from ysUI Icons
+(https://ysui.org), MIT License. Copyright (c) 2024 ysUI. The full license
+text is in LICENSE-ysUI. Source files, from the ysUI-Icons repo:
+
+  func_shutdown.png  <- scalable/actions/system-shutdown.svg
+  func_reset.png     <- scalable/actions/system-reboot.svg
+  func_firmware.png  <- scalable/devices/video-display.svg
+  os_recovery.png    <- scalable/apps/utilities-terminal.svg
+
+They are converted to white PNGs at rEFInd's icon sizes when the image is
+built. The Elavo sun on the main row is from the Plymouth theme, not ysUI.

@@ -664,6 +664,59 @@ chmod 755 /usr/lib/NetworkManager/dispatcher.d/90-elavo-flatpak-preinstall
 test -x /usr/libexec/elavo-bluetooth-agent
 test -f /usr/lib/systemd/system/elavo-bluetooth-agent.service
 test -f /usr/share/dbus-1/system.d/io.elavo.Bluetooth.conf
+# Boot menu: rEFInd (planning/near-term-plan.md, section 5, in elavo-architecture-and-planning-internal). bootupd keeps installing
+# shim and GRUB in EFI/fedora, and EFI/BOOT/BOOTX64.EFI stays shim, so GRUB is
+# still the firmware fallback and the "Recovery (GRUB)" entry. rEFInd itself
+# is not in the image's /boot: elavo-refind.service copies it, its ext4
+# driver, refind.conf and the theme to EFI/refind on the EFI system
+# partition at boot, adds an "Elavo" firmware boot entry once, and writes
+# EFI/refind/elavo-entries.conf from the ostree entries in
+# /boot/loader/entries (one menu entry per deployment: current and
+# previous). It writes them again at shutdown after ostree finalizes a staged
+# update, and elavo-refind-entries.path rewrites them after a rollback.
+# Fedora ships rEFInd unsigned only; with Secure Boot on, elavo-refind leaves
+# the firmware boot order alone and GRUB stays the menu. EFI only: on BIOS
+# machines the units do not start.
+dnf5 install -y rEFInd-unsigned-x64
+test -f /usr/share/rEFInd/refind/refind_x64.efi
+test -f /usr/share/rEFInd/refind/drivers_x64/ext4_x64.efi
+test -f /usr/share/rEFInd/refind/icons/tool_rescue.png
+chmod 755 /usr/libexec/elavo-refind
+bash -n /usr/libexec/elavo-refind
+test -f /usr/share/elavo/refind/refind.conf
+test -f /usr/share/elavo/refind/themes/elavo/theme.conf
+# Placeholder artwork until elavo-visuals ships the boot menu theme: a
+# black background, the Elavo sun from the Plymouth logo, and white tool
+# icons from the vendored ysUI SVGs (themes/elavo/src/, MIT License). The
+# background is black so a hidden boot stays black: screensaver -1 skips
+# the banner, and rEFInd's graphics-on kernel handoff clears to the
+# banner's top-left pixel (BltClearScreen(FALSE)), which is not gated on
+# screensaver.
+refind_theme=/usr/share/elavo/refind/themes/elavo
+refind_icons="${refind_theme}/icons"
+refind_src="${refind_theme}/src"
+install -d "${refind_icons}"
+magick -size 1920x1080 'xc:#000000' "PNG24:${refind_theme}/background.png"
+magick /usr/share/plymouth/themes/elavo-boot/logo.png -trim +repage \
+    -resize 112x112 -background none -gravity center -extent 128x128 \
+    "PNG32:${refind_theme}/os_elavo.png"
+# rEFInd OS tags are 128x128; the tool row is 48x48. The SVGs have no fill,
+# so they render black; colorize them white for the dark background.
+ysui_png() {
+    magick -background none "$1" -resize "$2x$2" -fill white -colorize 100 "PNG32:$3"
+    test -s "$3"
+}
+ysui_png "${refind_src}/system-shutdown.svg" 48 "${refind_icons}/func_shutdown.png"
+ysui_png "${refind_src}/system-reboot.svg" 48 "${refind_icons}/func_reset.png"
+ysui_png "${refind_src}/video-display.svg" 48 "${refind_icons}/func_firmware.png"
+ysui_png "${refind_src}/utilities-terminal.svg" 128 "${refind_theme}/os_recovery.png"
+test -s "${refind_theme}/background.png"
+test -s "${refind_theme}/os_elavo.png"
+test -f "${refind_src}/LICENSE-ysUI"
+systemctl enable elavo-refind.service elavo-refind-entries.path
+test -L /etc/systemd/system/multi-user.target.wants/elavo-refind.service
+test -L /etc/systemd/system/multi-user.target.wants/elavo-refind-entries.path
+
 systemctl enable greetd.service elavo-flatpak-preinstall.service \
     elavo-bluetooth-agent.service
 systemctl set-default graphical.target

@@ -1,0 +1,16 @@
+# ostree writes a new /boot/loader.N directory and renames the /boot/loader
+# symlink onto it whenever it changes the boot entries (bootc rollback,
+# undeploy, cleanup). Watching /boot itself catches that rename; a watch on
+# /boot/loader or /boot/loader/entries does not (tested: bootc rollback did
+# not trigger either).
+[Unit]
+Description=Watch the ostree boot entries for the Elavo boot menu
+ConditionPathExists=/run/ostree-booted
+ConditionPathExists=/sys/firmware/efi
+
+[Path]
+PathChanged=/boot
+Unit=elavo-refind-entries.service
+
+[Install]
+WantedBy=multi-user.target

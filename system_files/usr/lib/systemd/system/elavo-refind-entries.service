@@ -1,0 +1,13 @@
+# Rewrites the Elavo boot menu entries when the deployments change while the
+# system is running: bootc rollback, rpm-ostree cleanup, kernel argument
+# changes that are not staged.
+[Unit]
+Description=Update the Elavo boot menu entries
+ConditionPathExists=/run/ostree-booted
+ConditionPathExists=/sys/firmware/efi
+RequiresMountsFor=/boot /boot/efi
+After=elavo-refind.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/libexec/elavo-refind entries

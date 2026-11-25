@@ -1,0 +1,30 @@
+# Keeps the Elavo boot menu (rEFInd, on the EFI system partition) in step
+# with the ostree deployments.
+#
+# At boot it installs or refreshes rEFInd and writes the menu entries.
+# At shutdown it writes them again, after ostree-finalize-staged.service has
+# written the staged deployment's boot entry. A staged update only reaches
+# /boot/loader/entries at that point, so without this second run the next
+# boot would not offer the new deployment.
+[Unit]
+Description=Elavo boot menu (rEFInd) entries
+ConditionPathExists=/run/ostree-booted
+ConditionPathExists=/sys/firmware/efi
+DefaultDependencies=no
+RequiresMountsFor=/boot /boot/efi
+After=local-fs.target
+# Stopped after ostree finalizes a staged deployment (stop order is the
+# reverse of start order).
+Before=ostree-finalize-staged.service bootc-finalize-staged.service
+Before=basic.target final.target
+Conflicts=final.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/libexec/elavo-refind sync
+ExecStop=/usr/libexec/elavo-refind entries
+TimeoutStopSec=2min
+
+[Install]
+WantedBy=multi-user.target
