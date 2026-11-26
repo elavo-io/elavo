@@ -104,6 +104,17 @@ RUN git clone --depth 1 --branch "${ELAVO_MUSIC_REF}" \
 WORKDIR /src
 RUN cargo build --release --locked && DESTDIR=/out scripts/install
 
+# Notes (the notes stage) is the notes app. It is shown as Notes in the
+# launcher. Built at a pinned tag, like Music.
+FROM registry.fedoraproject.org/fedora:${FEDORA_VERSION} AS notes
+ARG ELAVO_NOTES_REF=v0.0.2
+RUN dnf5 install -y git gcc pkgconf-pkg-config rust cargo gtk4-devel && \
+    dnf5 clean all
+RUN git clone --depth 1 --branch "${ELAVO_NOTES_REF}" \
+        https://github.com/elavo-io/elavo-notes.git /src
+WORKDIR /src
+RUN cargo build --release --locked && DESTDIR=/out scripts/install
+
 # labwc with the mods layer, built at a pinned revision of elavo-labwc-mods.
 # main until the first tag; pin a tag the way Folio is pinned after that.
 # The stage clones elavo-labwc at the commit in that repo's LABWC_REF.
@@ -142,6 +153,7 @@ COPY --from=applications /out /applications_files
 COPY --from=files /out /files_files
 COPY --from=archive-utility /out /archive_utility_files
 COPY --from=music /out /music_files
+COPY --from=notes /out /notes_files
 COPY --from=labwc /out /labwc_files
 
 # Base Image

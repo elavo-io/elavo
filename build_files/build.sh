@@ -440,6 +440,12 @@ command -v innoextract >/dev/null
 command -v bwrap >/dev/null
 command -v zstd >/dev/null
 test -e /usr/lib64/libunarr.so.1
+# Notes (the notes stage) is the notes app, shown as Notes in the launcher.
+cp -a /ctx/notes_files/. /
+test -x /usr/bin/elavo-notes
+test -f /usr/share/applications/io.elavo.Notes.desktop
+grep -q '^Name=Notes$' /usr/share/applications/io.elavo.Notes.desktop
+test -s /usr/share/icons/hicolor/256x256/apps/io.elavo.Notes.png
 # Music (the music stage) is the music library and player. It is shown as
 # Music in the launcher. Its desktop file declares X-Elavo-DefaultAccent for
 # the Automatic accent. No file type is made Music's default here. The
