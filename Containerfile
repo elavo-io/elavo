@@ -107,7 +107,7 @@ RUN cargo build --release --locked && DESTDIR=/out scripts/install
 # Notes (the notes stage) is the notes app. It is shown as Notes in the
 # launcher. Built at a pinned tag, like Music.
 FROM registry.fedoraproject.org/fedora:${FEDORA_VERSION} AS notes
-ARG ELAVO_NOTES_REF=v0.0.2
+ARG ELAVO_NOTES_REF=v0.0.3
 RUN dnf5 install -y git gcc pkgconf-pkg-config rust cargo gtk4-devel && \
     dnf5 clean all
 RUN git clone --depth 1 --branch "${ELAVO_NOTES_REF}" \
