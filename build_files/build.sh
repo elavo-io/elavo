@@ -185,8 +185,11 @@ chmod 755 /etc/xdg/labwc/autostart \
     /usr/libexec/elavo-user-theme /usr/libexec/elavo-labwc-theme \
     /usr/libexec/elavo-idle \
     /usr/libexec/elavo-wallpaper \
-    /usr/libexec/elavo-panel-action /usr/libexec/elavo-power-button
+    /usr/libexec/elavo-panel-action /usr/libexec/elavo-power-button \
+    /usr/libexec/elavo-media-key
 python3 /usr/libexec/elavo-power-button --self-test
+sh -n /usr/libexec/elavo-media-key
+test -x /usr/libexec/elavo-media-key
 test -x /usr/bin/swaybg
 test -x /usr/bin/magick
 test -x /usr/bin/ffmpeg

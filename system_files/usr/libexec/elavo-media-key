@@ -1,0 +1,73 @@
+#!/bin/sh
+# Send a media key to a media player, whichever window has the focus.
+#
+#   elavo-media-key play-pause | play | pause | stop | next | previous
+#   elavo-media-key --list        the players found, and what each is doing
+#
+# labwc runs this for XF86AudioPlay, Pause, Stop, Next and Prev (see
+# /etc/xdg/labwc/rc.xml). A Wayland application only receives keys while its
+# window has the focus, so on their own those keys reach Music only when it is
+# in front. Any player that speaks MPRIS2 on the session bus (Music, Firefox,
+# Spotify, mpv with mpris, and so on) answers here instead.
+#
+# With several players, the one that is playing gets the key. If none is,
+# the one that is paused does, then any other, in name order. Nothing running
+# is not an error: the key does nothing.
+set -eu
+
+call() {
+    gdbus call --session --timeout 2 "$@"
+}
+
+players() {
+    call --dest org.freedesktop.DBus --object-path /org/freedesktop/DBus \
+        --method org.freedesktop.DBus.ListNames 2>/dev/null |
+        tr ',' '\n' |
+        sed -n "s/.*'\(org\.mpris\.MediaPlayer2\.[^']*\)'.*/\1/p" |
+        sort
+}
+
+# Playing, Paused, Stopped; empty if the player does not answer.
+status_of() {
+    call --dest "$1" --object-path /org/mpris/MediaPlayer2 \
+        --method org.freedesktop.DBus.Properties.Get \
+        org.mpris.MediaPlayer2.Player PlaybackStatus 2>/dev/null |
+        sed -n "s/.*'\(Playing\|Paused\|Stopped\)'.*/\1/p"
+}
+
+case "${1:-}" in
+    play-pause) method=PlayPause ;;
+    play) method=Play ;;
+    pause) method=Pause ;;
+    stop) method=Stop ;;
+    next) method=Next ;;
+    previous) method=Previous ;;
+    --list) method= ;;
+    *)
+        echo "usage: elavo-media-key play-pause|play|pause|stop|next|previous|--list" >&2
+        exit 1
+        ;;
+esac
+
+playing=
+paused=
+other=
+for name in $(players); do
+    status=$(status_of "${name}")
+    if [ "${method}" = "" ]; then
+        echo "${name} ${status:-unknown}"
+        continue
+    fi
+    case "${status}" in
+        Playing) [ -n "${playing}" ] || playing=${name} ;;
+        Paused) [ -n "${paused}" ] || paused=${name} ;;
+        *) [ -n "${other}" ] || other=${name} ;;
+    esac
+done
+[ -n "${method}" ] || exit 0
+
+target=${playing:-${paused:-${other}}}
+[ -n "${target}" ] || exit 0
+exec gdbus call --session --timeout 2 --dest "${target}" \
+    --object-path /org/mpris/MediaPlayer2 \
+    --method "org.mpris.MediaPlayer2.Player.${method}" >/dev/null
