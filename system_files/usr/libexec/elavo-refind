@@ -5,16 +5,19 @@
 #                          Elavo theme to EFI/refind, and add an "Elavo"
 #                          firmware boot entry the first time
 #   elavo-refind entries   write EFI/refind/elavo-entries.conf from the
-#                          ostree boot entries in /boot/loader/entries
+#                          ostree boot entries in /boot/loader/entries and
+#                          /var/lib/elavo/refind.conf
 #   elavo-refind sync      both (run at boot)
 #   elavo-refind show      print the generated entries file
 #
 # rEFInd cannot read Boot Loader Specification files, so this turns the
-# ostree deployments into one rEFInd menuentry for the current image, with
-# submenuentry items (Tab, F2 or +) for "Previous version (rollback)" and
-# "Recovery (GRUB)". Each kernel item boots that deployment's kernel,
-# initramfs and options (including ostree=) directly. GRUB stays installed
-# by bootupd in EFI/fedora and is the firmware fallback
+# ostree deployments into one rEFInd menuentry for the default Elavo image,
+# with submenuentry items (Tab, F2 or +) for the other deployment and
+# "Recovery (GRUB)". When Recovery (GRUB) is chosen as the default startup
+# option in System Settings, it gets its own top-level entry so rEFInd's
+# default_selection can boot it directly. Each kernel item boots that
+# deployment's kernel, initramfs and options (including ostree=) directly.
+# GRUB stays installed by bootupd in EFI/fedora and is the firmware fallback
 # (EFI/BOOT/BOOTX64.EFI) as well as the Recovery item.
 #
 # EFI only. On BIOS machines, or with Secure Boot on while rEFInd is not
@@ -23,6 +26,9 @@ set -euo pipefail
 
 SRC=${ELAVO_REFIND_SRC:-/usr/share/rEFInd/refind}
 ELAVO_SRC=${ELAVO_REFIND_DATA:-/usr/share/elavo/refind}
+CONF=${ELAVO_REFIND_CONF:-/var/lib/elavo/refind.conf}
+FALLBACK_CONF=/etc/elavo/refind.conf
+STATE=${ELAVO_REFIND_STATE:-/run/elavo/refind-state}
 ENTRIES=/boot/loader/entries
 LABEL=Elavo
 LOADER='\EFI\refind\refind_x64.efi'
@@ -68,6 +74,157 @@ put_tree() {
     done
 }
 
+# Read a setting from [Startup] in /etc/elavo/refind.conf.
+conf_get() {
+    local key="$1" src="${CONF}"
+    [[ -f "${src}" ]] || src="${FALLBACK_CONF}"
+    [[ -f "${src}" ]] || return 0
+    awk -F= -v k="${key}" '
+        /^[[:space:]]*[#;]/ { next }
+        /^[[:space:]]*\[/ {
+            sec = $0
+            gsub(/^[[:space:]]*\[|\][[:space:]]*$/, "", sec)
+            next
+        }
+        (sec == "" || sec == "Startup") {
+            lhs = $1
+            gsub(/^[[:space:]]+|[[:space:]]+$/, "", lhs)
+            if (lhs == k) {
+                val = substr($0, index($0, "=") + 1)
+                gsub(/^[[:space:]]+|[[:space:]]+$/, "", val)
+                print val
+                exit
+            }
+        }
+    ' "${src}"
+}
+
+read_startup_config() {
+    cfg_default=$(conf_get Default)
+    cfg_menu=$(conf_get Menu)
+    case "${cfg_default}" in
+        current|previous|recovery) ;;
+        other:*)
+            local id=${cfg_default#other:}
+            if [[ ! "${id}" =~ ^[A-Za-z0-9._-]+$ || ${#id} -gt 64 ]]; then
+                cfg_default=current
+            fi
+            ;;
+        *) cfg_default=current ;;
+    esac
+    case "${cfg_menu}" in
+        auto|hidden|always) ;;
+        *) cfg_menu=auto ;;
+    esac
+}
+
+other_label_for_dir() {
+    case "${1,,}" in
+        microsoft) echo "Windows" ;;
+        apple)     echo "macOS" ;;
+        ubuntu)    echo "Ubuntu" ;;
+        debian)    echo "Debian" ;;
+        arch)      echo "Arch Linux" ;;
+        opensuse)  echo "openSUSE" ;;
+        pop)       echo "Pop!_OS" ;;
+        nixos)     echo "NixOS" ;;
+        *)         echo "$1" ;;
+    esac
+}
+
+other_id_for_dir() {
+    case "${1,,}" in
+        microsoft) echo "other:Microsoft" ;;
+        apple)     echo "other:macOS" ;;
+        *)
+            local b="$1"
+            if [[ "${b}" =~ ^[A-Za-z0-9._-]+$ && ${#b} -le 64 ]]; then
+                echo "other:${b}"
+            fi
+            ;;
+    esac
+}
+
+# Print one tab-separated line per detected non-Elavo operating system:
+#   <id>\t<display-label>\t<disk-label>
+detect_other_systems() {
+    local dev pt fs lbl plbl disk_lbl mnt d base id label did_mount
+    declare -A seen=()
+    while read -r dev pt fs lbl plbl; do
+        dev=$(printf '%b' "${dev}")
+        lbl=$(printf '%b' "${lbl:-}")
+        plbl=$(printf '%b' "${plbl:-}")
+        disk_lbl="${lbl:-${plbl}}"
+        [[ -n "${disk_lbl}" ]] || disk_lbl=$(basename "${dev}")
+
+        case "${fs}" in
+            apfs|hfsplus)
+                id="other:macOS"
+                if [[ -z "${seen[${id}]+x}" ]]; then
+                    seen[${id}]=1
+                    printf '%s\t%s\t%s\n' "${id}" "macOS" "${disk_lbl}"
+                fi
+                continue
+                ;;
+        esac
+
+        [[ "${pt,,}" == c12a7328-f81f-11d2-ba4b-00a0c93ec93b && "${fs}" == vfat ]] || continue
+        mnt=$(findmnt -n -o TARGET "${dev}" | head -n1 || true)
+        did_mount=0
+        if [[ -z "${mnt}" ]]; then
+            mnt=$(mktemp -d)
+            mount -o ro "${dev}" "${mnt}" 2>/dev/null || { rmdir "${mnt}"; continue; }
+            did_mount=1
+        fi
+        for d in "${mnt}"/EFI/*/; do
+            [[ -d "${d}" ]] || continue
+            base=$(basename "${d}")
+            case "${base,,}" in
+                fedora|boot|refind|tools) continue ;;
+            esac
+            [[ -n "$(find "${d}" -maxdepth 2 -iname '*.efi' -print -quit 2>/dev/null)" ]] || continue
+            id=$(other_id_for_dir "${base}")
+            [[ -n "${id}" && -z "${seen[${id}]+x}" ]] || continue
+            seen[${id}]=1
+            label=$(other_label_for_dir "${base}")
+            printf '%s\t%s\t%s\n' "${id}" "${label}" "${disk_lbl}"
+        done
+        if [[ ${did_mount} -eq 1 ]]; then
+            umount "${mnt}" || true
+            rmdir "${mnt}" || true
+        fi
+    done < <(lsblk -n -p -o PATH,PARTTYPE,FSTYPE,LABEL,PARTLABEL -r | awk 'NF >= 3')
+}
+
+# Publish a world-readable state snapshot for System Settings (since /boot/efi
+# is 0700 root:root). Uses the already-probed other-system lines when given.
+write_state() {
+    local dir installed=0 sb=0 boot_entry=0 esp_dev esp_label=""
+    dir=$(dirname "${STATE}")
+    install -d -m 0755 "${dir}" 2>/dev/null || return 0
+    [[ -f "${DEST}/refind_x64.efi" && -f "${DEST}/elavo-entries.conf" ]] && installed=1
+    secure_boot_on && sb=1
+    efibootmgr -v 2>/dev/null | grep -qi 'refind_x64.efi' && boot_entry=1
+    esp_dev=$(findmnt -n -o SOURCE "${esp}" 2>/dev/null || true)
+    esp_dev=${esp_dev%%\[*}
+    if [[ -n "${esp_dev}" ]]; then
+        esp_label=$(lsblk -n -d -o LABEL "${esp_dev}" 2>/dev/null | head -n1 || true)
+        [[ -n "${esp_label}" ]] || esp_label=$(lsblk -n -d -o PARTLABEL "${esp_dev}" 2>/dev/null | head -n1 || true)
+    fi
+    {
+        echo "installed=${installed}"
+        echo "secure_boot=${sb}"
+        echo "boot_entry=${boot_entry}"
+        echo "esp_label=${esp_label}"
+        local line
+        for line in "$@"; do
+            [[ -n "${line}" ]] && echo "other=${line}"
+        done
+    } > "${STATE}.new"
+    chmod 0644 "${STATE}.new"
+    mv -f "${STATE}.new" "${STATE}"
+}
+
 do_install() {
     [[ -f "${SRC}/refind_x64.efi" ]] || { log "rEFInd is not installed in the image"; exit 1; }
     install -d "${DEST}/drivers_x64" "${DEST}/icons" "${DEST}/themes/elavo"
@@ -102,35 +259,14 @@ do_install() {
     log "added firmware boot entry ${LABEL} -> ${LOADER}"
 }
 
-# Other operating systems the menu should offer. With none, the menu stays
-# hidden unless a key is held at power-on.
-other_systems() {
-    local n=0 dev pt fs mnt d
-    while read -r dev pt fs; do
-        case "${fs}" in apfs|hfsplus) n=$((n + 1)); continue ;; esac
-        [[ "${pt,,}" == c12a7328-f81f-11d2-ba4b-00a0c93ec93b && "${fs}" == vfat ]] || continue
-        mnt=$(findmnt -n -o TARGET "${dev}" | head -n1 || true)
-        if [[ -z "${mnt}" ]]; then
-            mnt=$(mktemp -d)
-            mount -o ro "${dev}" "${mnt}" 2>/dev/null || { rmdir "${mnt}"; continue; }
-            for d in "${mnt}"/EFI/*/; do
-                case "$(basename "${d}" | tr '[:upper:]' '[:lower:]')" in
-                    fedora|boot|refind|tools) ;; *) n=$((n + 1)) ;;
-                esac
-            done
-            umount "${mnt}"; rmdir "${mnt}"
-        else
-            for d in "${mnt}"/EFI/*/; do
-                case "$(basename "${d}" | tr '[:upper:]' '[:lower:]')" in
-                    fedora|boot|refind|tools) ;; *) n=$((n + 1)) ;;
-                esac
-            done
-        fi
-    done < <(lsblk -n -p -o PATH,PARTTYPE,FSTYPE -r | awk 'NF >= 2')
-    echo "${n}"
-}
-
 field() { sed -n "s/^$1[[:space:]]\+//p" "$2" | head -n1; }
+
+title_of() {
+    local t
+    t=$(field title "$1")
+    t=$(sed 's/ *(ostree:[0-9]\+)$//' <<<"${t}")
+    echo "${t:-Elavo}"
+}
 
 # Print the kernel, initrd and options for one ostree BLS file.
 # $1 = indent, $2 = BLS path, $3 = boot volume, $4 = /boot prefix to strip.
@@ -145,6 +281,31 @@ emit_kernel() {
     done < <(sed -n 's/^initrd[[:space:]]\+//p' "${bls}" | tr ' ' '\n')
     echo "${indent}options \"${opts}\""
     echo "${indent}graphics on"
+}
+
+emit_recovery_submenu() {
+    local esp_vol="$1"
+    # submenuentry inherits loader, initrd and options from the parent.
+    # Recovery chainloads shim on the ESP, so those must be cleared
+    # (an empty initrd/options token overrides the parent). volume and
+    # loader are supported on submenuentry (rEFInd 0.14.2 AddSubmenu).
+    echo "    submenuentry \"Recovery (GRUB)\" {"
+    echo "        volume ${esp_vol}"
+    echo "        loader /EFI/fedora/shimx64.efi"
+    echo "        initrd"
+    echo "        options"
+    echo "    }"
+}
+
+default_selection_for() {
+    case "$1" in
+        current|previous) echo "1" ;;
+        recovery)         echo '"Recovery (GRUB)"' ;;
+        other:Microsoft)  echo '"Microsoft,Windows"' ;;
+        other:macOS)      echo '"macOS,OS X"' ;;
+        other:*)          echo "\"${1#other:}\"" ;;
+        *)                echo "1" ;;
+    esac
 }
 
 do_entries() {
@@ -168,67 +329,105 @@ do_entries() {
     done | sort -t$'\t' -k1,1nr | cut -f2)
     [[ ${#files[@]} -gt 0 ]] || { log "no boot entries"; exit 1; }
 
+    local cfg_default cfg_menu
+    read_startup_config
+
+    local -a other_lines=()
+    mapfile -t other_lines < <(detect_other_systems)
+    local others=${#other_lines[@]}
+
+    local eff_default="${cfg_default}"
+    if [[ "${eff_default}" == previous && ${#files[@]} -lt 2 ]]; then
+        eff_default=current
+    fi
+
     # timeout -1 boots at once unless a key is held. screensaver -1 would
     # also blank the screen, but with timeout -1 rEFInd never paints the
     # menu after that, so a held key would not show it. The theme banner is
     # a black fill instead: hidden boots stay black (no logo or icons), and
     # a held key can still open the menu.
-    local others timeout
-    others=$(other_systems)
-    if [[ "${others}" -gt 0 ]]; then timeout=5; else timeout=-1; fi
+    local timeout
+    case "${cfg_menu}" in
+        always) timeout=5 ;;
+        hidden) timeout=-1 ;;
+        *)      if [[ "${others}" -gt 0 ]]; then timeout=5; else timeout=-1; fi ;;
+    esac
+
+    local def_sel
+    def_sel=$(default_selection_for "${eff_default}")
 
     local out="${DEST}/elavo-entries.conf"
     {
         echo "# Written by elavo-refind from ${ENTRIES}. Do not edit; it is rewritten"
-        echo "# after every update and rollback. Local settings go in local.conf."
-        echo "# Other systems found: ${others}. timeout -1 boots at once unless a key is held."
-        echo "# The banner is a black fill, so a hidden boot shows no logo or icons."
-        echo "# The main row has the current deployment. Tab, F2 or + opens a submenu"
-        echo "# with the previous deployment and Recovery (GRUB)."
+        echo "# after every update and rollback. Local settings go in local.conf;"
+        echo "# Startup Disk choices go in ${CONF}."
+        echo "# Other systems found: ${others}. Config: Default=${cfg_default}, Menu=${cfg_menu}."
         echo "timeout ${timeout}"
-        echo "default_selection 1"
+        echo "default_selection ${def_sel}"
         [[ -n "${boot_vol}" ]] && echo "dont_scan_volumes ${boot_vol}"
         echo
 
-        local current="${files[0]}" title
-        title=$(field title "${current}")
-        title=$(sed 's/ *(ostree:[0-9]\+)$//' <<<"${title}")
-        title="${title:-Elavo}"
+        local curr_title prev_title i f label
+        curr_title=$(title_of "${files[0]}")
 
-        echo "menuentry \"${title}\" {"
-        echo "    icon /EFI/refind/themes/elavo/os_elavo.png"
-        echo "    ostype Linux"
-        emit_kernel "    " "${current}" "${boot_vol}" "${strip}"
-
-        local i=1 f label
-        for f in "${files[@]:1}"; do
-            if [[ ${i} -eq 1 ]]; then
-                label="Previous version (rollback)"
-            else
-                label="Older version ${i}"
-            fi
-            echo "    submenuentry \"${label}\" {"
-            emit_kernel "        " "${f}" "${boot_vol}" "${strip}"
+        if [[ "${eff_default}" == previous ]]; then
+            prev_title=$(title_of "${files[1]}")
+            echo "menuentry \"${prev_title} (previous)\" {"
+            echo "    icon /EFI/refind/themes/elavo/os_elavo.png"
+            echo "    ostype Linux"
+            emit_kernel "    " "${files[1]}" "${boot_vol}" "${strip}"
+            echo "    submenuentry \"Current version (${curr_title})\" {"
+            emit_kernel "        " "${files[0]}" "${boot_vol}" "${strip}"
             echo "    }"
-            i=$((i + 1))
-        done
+            i=2
+            for f in "${files[@]:2}"; do
+                echo "    submenuentry \"Older version ${i}\" {"
+                emit_kernel "        " "${f}" "${boot_vol}" "${strip}"
+                echo "    }"
+                i=$((i + 1))
+            done
+            emit_recovery_submenu "${esp_vol}"
+            echo "}"
+        else
+            echo "menuentry \"${curr_title}\" {"
+            echo "    icon /EFI/refind/themes/elavo/os_elavo.png"
+            echo "    ostype Linux"
+            emit_kernel "    " "${files[0]}" "${boot_vol}" "${strip}"
+            i=1
+            for f in "${files[@]:1}"; do
+                if [[ ${i} -eq 1 ]]; then
+                    label="Previous version (rollback)"
+                else
+                    label="Older version ${i}"
+                fi
+                echo "    submenuentry \"${label}\" {"
+                emit_kernel "        " "${f}" "${boot_vol}" "${strip}"
+                echo "    }"
+                i=$((i + 1))
+            done
+            if [[ "${eff_default}" != recovery ]]; then
+                emit_recovery_submenu "${esp_vol}"
+            fi
+            echo "}"
 
-        # submenuentry inherits loader, initrd and options from the parent.
-        # Recovery chainloads shim on the ESP, so those must be cleared
-        # (an empty initrd/options token overrides the parent). volume and
-        # loader are supported on submenuentry (rEFInd 0.14.2 AddSubmenu).
-        echo "    submenuentry \"Recovery (GRUB)\" {"
-        echo "        volume ${esp_vol}"
-        echo "        loader /EFI/fedora/shimx64.efi"
-        echo "        initrd"
-        echo "        options"
-        echo "    }"
-        echo "}"
+            if [[ "${eff_default}" == recovery ]]; then
+                echo
+                echo "menuentry \"Recovery (GRUB)\" {"
+                echo "    icon /EFI/refind/themes/elavo/os_recovery.png"
+                echo "    volume ${esp_vol}"
+                echo "    loader /EFI/fedora/shimx64.efi"
+                echo "}"
+            fi
+        fi
     } > "${out}.new"
-    if [[ -f "${out}" ]] && cmp -s "${out}.new" "${out}"; then rm -f "${out}.new"; return 0; fi
-    mv -f "${out}.new" "${out}"
-    sync -f "${out}"
-    log "wrote ${out} (${#files[@]} deployments, timeout ${timeout})"
+    if [[ ! -f "${out}" ]] || ! cmp -s "${out}.new" "${out}"; then
+        mv -f "${out}.new" "${out}"
+        sync -f "${out}"
+        log "wrote ${out} (${#files[@]} deployments, default ${eff_default}, timeout ${timeout})"
+    else
+        rm -f "${out}.new"
+    fi
+    write_state "${other_lines[@]}"
 }
 
 case "${1:-sync}" in
