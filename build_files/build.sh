@@ -115,6 +115,11 @@ dnf5 install -y \
     libsoup3 \
     brcmfmac-firmware
 
+# base-main already ships the zstd binary, so the install above skips it while
+# pulling a newer libzstd; the old binary then refuses to run and dracut fails
+# compressing the initramfs. Upgrade both together so they match.
+dnf5 upgrade -y zstd libzstd
+
 # base-main ships Firefox as an RPM. Elavo's Firefox is the Flathub Flatpak
 # (preinstalled below), which updates on its own; with both, the launcher and
 # the dock would show two Firefoxes, with separate profiles.
